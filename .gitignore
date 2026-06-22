@@ -31,3 +31,4 @@ logs/
 
 # ───────── Node (por si exportas nodos custom) ─────────
 node_modules/
+*:Zone.Identifier
