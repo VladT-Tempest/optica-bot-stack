@@ -1,0 +1,5 @@
+# Caddy lee el dominio desde la variable de entorno DOMAIN.
+# Provisiona y renueva el certificado TLS automáticamente (Let's Encrypt).
+{$DOMAIN} {
+    reverse_proxy n8n:5678
+}

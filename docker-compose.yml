@@ -1,0 +1,76 @@
+services:
+  # ── Reverse proxy con HTTPS automático (Let's Encrypt) ──
+  # Necesario porque Meta exige un webhook público con certificado TLS válido.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"     # requerido para el challenge ACME de Let's Encrypt
+      - "443:443"   # tráfico HTTPS
+    environment:
+      - DOMAIN=${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - n8n
+
+  # ── Base de datos: persistencia de n8n + memoria de chat + RAG (pgvector) ──
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # OJO: no exponemos el puerto 5432 al host. Solo es visible dentro de la red de Docker.
+
+  # ── n8n: el orquestador del bot ──
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    restart: unless-stopped
+    environment:
+      # Conexión a Postgres
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
+      - DB_POSTGRESDB_USER=${POSTGRES_USER}
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+      # Clave de cifrado de credenciales — debe ser estable y secreta
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      # URLs públicas (críticas para que los webhooks de WhatsApp se registren bien)
+      - N8N_HOST=${DOMAIN}
+      - N8N_PROTOCOL=https
+      - N8N_PORT=5678
+      - WEBHOOK_URL=https://${DOMAIN}/
+      - N8N_EDITOR_BASE_URL=https://${DOMAIN}/
+      # Como vamos detrás de Caddy (1 proxy), esto hace que n8n lea bien la IP real
+      - N8N_PROXY_HOPS=1
+      # Task runners (recomendado/estándar en n8n moderno; evita el warning de deprecación)
+      - N8N_RUNNERS_ENABLED=true
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      # Zona horaria (Yopal / Colombia)
+      - GENERIC_TIMEZONE=America/Bogota
+      - TZ=America/Bogota
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "5678"   # solo visible dentro de la red de Docker; Caddy lo publica vía HTTPS
+
+volumes:
+  caddy_data:
+  caddy_config:
+  postgres_data:
+  n8n_data:
