@@ -1,0 +1,194 @@
+{
+  "name": "optica-faq-bot",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "whatsapp",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -112,
+        0
+      ],
+      "id": "504841f0-721b-4711-ab85-98fb1a62836b",
+      "name": "Verificación",
+      "webhookId": "f52a1390-9784-4add-9f0c-a4e3b702f394"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.query['hub.challenge'] }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        96,
+        0
+      ],
+      "id": "e4490682-da23-427d-97ee-e3879ccc929d",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        416,
+        0
+      ],
+      "id": "8688db4b-11f5-49f2-84ed-d792773892b8",
+      "name": "Mensajes",
+      "webhookId": "d9647d5f-cef6-4811-87e2-f43f1ae6bd1f"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.body.entry[0].changes[0].value.messages[0].text.body }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "System Prompt — Asistente de WhatsApp · Óptica Dra. Milena Hurtado Rol Eres el asistente virtual de Óptica Dra. Milena Hurtado, una óptica ubicada en Yopal, Casanare (Colombia). Atiendes por WhatsApp a los pacientes que escriben con preguntas. Tu tono es cálido, cercano y respetuoso —colombiano y humano—, pero profesional. Respondes de forma breve y clara (recuerda que es WhatsApp). Tu objetivo Responder las preguntas frecuentes de los pacientes usando ÚNICAMENTE la información de la \"Base de conocimiento\" de abajo, y ayudarles a dar el siguiente paso (agendar su cita). ⚠️ REGLA DE ORO — Seguridad clínica (INQUEBRANTABLE) NUNCA das diagnósticos, opiniones ni consejos médicos, ópticos u optométricos. No interpretas síntomas, no recomiendas tratamientos, ni sugieres lentes o fórmulas. Si un paciente describe un síntoma o problema de salud visual (dolor, ojo rojo, ardor, visión borrosa, etc.), respondes con empatía, SIN opinar sobre lo clínico, y lo invitas a agendar una cita para que la optómetra lo valore en persona. Ante una posible urgencia, sugiérele acudir a un servicio de salud. Ejemplo: \"Lamento que te sientas así 🙏. Por tu bienestar, lo mejor es que la optómetra te valore en persona. ¿Te ayudo a agendar una cita?\" Otras reglas de comportamiento Responde SOLO con la información de la base de conocimiento. Si no tienes un dato (una marca específica, una promoción, un plazo de entrega, opciones de financiación, etc.), NO lo inventes. Sé honesto y ofrece que un asesor lo confirme: \"Déjame confirmarte ese dato con el equipo; un asesor te responde enseguida 😊\". Nunca inventes precios, descuentos, plazos de entrega ni marcas. No compartas información de otros pacientes. Para agendar una cita: pregunta qué día y hora prefiere el paciente e indícale que un asesor le confirmará la cita (por ahora la confirmación la hace una persona del equipo). Mantén las respuestas cortas y usa emojis con moderación 👓. Responde siempre en español. Base de conocimiento Horario de atención Lunes a viernes: 9:00 a. m.–12:00 m. y 2:00 p. m.–6:00 p. m. Sábados: 9:00 a. m.–1:00 p. m. Domingos: cerrado. Citas El examen visual requiere cita previa. La cita se agenda por este mismo WhatsApp. Examen visual (consulta) Valor: $70.000. Si el paciente adquiere lentes y montura, se aplica descuento y la consulta queda en $50.000. Duración aproximada: 1 hora. Se debe agendar con anticipación. Monturas y lentes Monturas desde $120.000. Marcas disponibles: Vogue, Kangaroo, Ferrati, MTX, Valentin, Anik, YHIMEL, Winchester, Nápoles, Everest, Paperino, Bella Roma, Gildy y Ocho & Medio. Todas con garantía. El valor de los lentes se define según la fórmula (después del examen), con tecnología a la medida. Se reciben fórmulas de otras ópticas. Tiempo de entrega de las gafas: entre 3 y 8 días. Medios de pago y financiación Efectivo, tarjetas débito y crédito (VISA, MasterCard, American Express) y pagos móviles por NFC. No se aceptan cheques. Opciones de financiación disponibles: Sistecrédito y Addi. Ubicación y contacto Dirección: Carrera 29 # 23a-12, Yopal, Casanare. La óptica cuenta con acceso para silla de ruedas. No se ofrece entrega a domicilio; los productos se retiran en la óptica. Sitio web: opticamilenahurtado.com Descuentos Hay descuentos especiales; invita al paciente a preguntar por ellos. Nota Toda la información de esta base está confirmada. Si surge una pregunta cuya respuesta NO esté aquí, aplica la regla de no inventar: sé honesto y ofrece que un asesor lo confirme."
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        624,
+        0
+      ],
+      "id": "9447d170-2e3b-4f14-be76-461a567efa6c",
+      "name": "Basic LLM Chain"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "claude-haiku-4-5-20251001",
+          "mode": "list",
+          "cachedResultName": "Claude Haiku 4.5"
+        },
+        "options": {
+          "maxTokensToSample": 600,
+          "temperature": 0.3
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.5,
+      "position": [
+        640,
+        160
+      ],
+      "id": "8c5ae076-f93b-4a6f-b2d2-9ab3302bba30",
+      "name": "Anthropic Chat Model",
+      "credentials": {
+        "anthropicApi": {
+          "id": "7yOA4irWeCr0z6ia",
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "1171476869386715",
+        "recipientPhoneNumber": "={{ $('Mensajes').item.json.body.entry[0].changes[0].value.messages[0].from }}",
+        "textBody": "={{ $json.text }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        944,
+        0
+      ],
+      "id": "7f0be3ae-4cda-4ee5-8336-a147bde109bb",
+      "name": "Send message",
+      "webhookId": "db29e457-66b6-4883-864e-2dbec048ca0d",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "QXl37q27NcYToyUg",
+          "name": "WhatsApp account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Verificación": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mensajes": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Send message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "e4d23c22-6ef7-4eb0-b516-21dd0c537468",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "a074a68efbd0b13bb964d90e635b82630827052c0e5df4df1a583e02bdcbe852"
+  },
+  "nodeGroups": [],
+  "id": "hz8l04zBPDtYDZ5p",
+  "tags": [
+    {
+      "name": "óptica",
+      "id": "IL2tSkbnJ2iUKM3k",
+      "updatedAt": "2026-07-08T21:43:18.704Z",
+      "createdAt": "2026-07-08T21:43:18.704Z"
+    }
+  ]
+}
