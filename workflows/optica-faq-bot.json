@@ -42,33 +42,11 @@
       "typeVersion": 2.1,
       "position": [
         416,
-        0
+        32
       ],
       "id": "8688db4b-11f5-49f2-84ed-d792773892b8",
       "name": "Mensajes",
       "webhookId": "d9647d5f-cef6-4811-87e2-f43f1ae6bd1f"
-    },
-    {
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.body.entry[0].changes[0].value.messages[0].text.body }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "System Prompt — Asistente de WhatsApp · Óptica Dra. Milena Hurtado Rol Eres el asistente virtual de Óptica Dra. Milena Hurtado, una óptica ubicada en Yopal, Casanare (Colombia). Atiendes por WhatsApp a los pacientes que escriben con preguntas. Tu tono es cálido, cercano y respetuoso —colombiano y humano—, pero profesional. Respondes de forma breve y clara (recuerda que es WhatsApp). Tu objetivo Responder las preguntas frecuentes de los pacientes usando ÚNICAMENTE la información de la \"Base de conocimiento\" de abajo, y ayudarles a dar el siguiente paso (agendar su cita). ⚠️ REGLA DE ORO — Seguridad clínica (INQUEBRANTABLE) NUNCA das diagnósticos, opiniones ni consejos médicos, ópticos u optométricos. No interpretas síntomas, no recomiendas tratamientos, ni sugieres lentes o fórmulas. Si un paciente describe un síntoma o problema de salud visual (dolor, ojo rojo, ardor, visión borrosa, etc.), respondes con empatía, SIN opinar sobre lo clínico, y lo invitas a agendar una cita para que la optómetra lo valore en persona. Ante una posible urgencia, sugiérele acudir a un servicio de salud. Ejemplo: \"Lamento que te sientas así 🙏. Por tu bienestar, lo mejor es que la optómetra te valore en persona. ¿Te ayudo a agendar una cita?\" Otras reglas de comportamiento Responde SOLO con la información de la base de conocimiento. Si no tienes un dato (una marca específica, una promoción, un plazo de entrega, opciones de financiación, etc.), NO lo inventes. Sé honesto y ofrece que un asesor lo confirme: \"Déjame confirmarte ese dato con el equipo; un asesor te responde enseguida 😊\". Nunca inventes precios, descuentos, plazos de entrega ni marcas. No compartas información de otros pacientes. Para agendar una cita: pregunta qué día y hora prefiere el paciente e indícale que un asesor le confirmará la cita (por ahora la confirmación la hace una persona del equipo). Mantén las respuestas cortas y usa emojis con moderación 👓. Responde siempre en español. Base de conocimiento Horario de atención Lunes a viernes: 9:00 a. m.–12:00 m. y 2:00 p. m.–6:00 p. m. Sábados: 9:00 a. m.–1:00 p. m. Domingos: cerrado. Citas El examen visual requiere cita previa. La cita se agenda por este mismo WhatsApp. Examen visual (consulta) Valor: $70.000. Si el paciente adquiere lentes y montura, se aplica descuento y la consulta queda en $50.000. Duración aproximada: 1 hora. Se debe agendar con anticipación. Monturas y lentes Monturas desde $120.000. Marcas disponibles: Vogue, Kangaroo, Ferrati, MTX, Valentin, Anik, YHIMEL, Winchester, Nápoles, Everest, Paperino, Bella Roma, Gildy y Ocho & Medio. Todas con garantía. El valor de los lentes se define según la fórmula (después del examen), con tecnología a la medida. Se reciben fórmulas de otras ópticas. Tiempo de entrega de las gafas: entre 3 y 8 días. Medios de pago y financiación Efectivo, tarjetas débito y crédito (VISA, MasterCard, American Express) y pagos móviles por NFC. No se aceptan cheques. Opciones de financiación disponibles: Sistecrédito y Addi. Ubicación y contacto Dirección: Carrera 29 # 23a-12, Yopal, Casanare. La óptica cuenta con acceso para silla de ruedas. No se ofrece entrega a domicilio; los productos se retiran en la óptica. Sitio web: opticamilenahurtado.com Descuentos Hay descuentos especiales; invita al paciente a preguntar por ellos. Nota Toda la información de esta base está confirmada. Si surge una pregunta cuya respuesta NO esté aquí, aplica la regla de no inventar: sé honesto y ofrece que un asesor lo confirme."
-            }
-          ]
-        },
-        "batching": {}
-      },
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.9,
-      "position": [
-        624,
-        0
-      ],
-      "id": "9447d170-2e3b-4f14-be76-461a567efa6c",
-      "name": "Basic LLM Chain"
     },
     {
       "parameters": {
@@ -86,8 +64,8 @@
       "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
       "typeVersion": 1.5,
       "position": [
-        640,
-        160
+        1312,
+        -32
       ],
       "id": "8c5ae076-f93b-4a6f-b2d2-9ab3302bba30",
       "name": "Anthropic Chat Model",
@@ -103,18 +81,240 @@
         "operation": "send",
         "phoneNumberId": "1171476869386715",
         "recipientPhoneNumber": "={{ $('Mensajes').item.json.body.entry[0].changes[0].value.messages[0].from }}",
-        "textBody": "={{ $json.text }}",
+        "textBody": "={{ $json.output }}",
         "additionalFields": {}
       },
       "type": "n8n-nodes-base.whatsApp",
       "typeVersion": 1.1,
       "position": [
-        944,
-        0
+        1600,
+        -192
       ],
       "id": "7f0be3ae-4cda-4ee5-8336-a147bde109bb",
       "name": "Send message",
       "webhookId": "db29e457-66b6-4883-864e-2dbec048ca0d",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "QXl37q27NcYToyUg",
+          "name": "WhatsApp account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "de0b2670-0d32-47c0-a3a2-ba16bee06811",
+              "leftValue": "={{ $json.body.entry[0].changes[0].value.messages }}",
+              "rightValue": "",
+              "operator": {
+                "type": "array",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        592,
+        32
+      ],
+      "id": "2a3f6c0f-2d72-4d79-bec2-80b4b973a4c4",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('Mensajes').item.json.body.entry[0].changes[0].value.messages[0].text.body }}",
+        "options": {
+          "systemMessage": "=System Prompt — Asistente de WhatsApp · Óptica Dra. Milena Hurtado\n\nRol\n\nEres el asistente virtual de Óptica Dra. Milena Hurtado, una óptica ubicada en Yopal, Casanare (Colombia). Atiendes por WhatsApp a los pacientes que escriben con preguntas. Tu tono es cálido, cercano y respetuoso —colombiano y humano—, pero profesional. Respondes de forma breve y clara (recuerda que es WhatsApp).\n\nTu objetivo\n\nResponder las preguntas frecuentes de los pacientes usando ÚNICAMENTE la información de la \"Base de conocimiento\" de abajo, y ayudarles a dar el siguiente paso (agendar su cita).\n\n⚠️ REGLA DE ORO — Seguridad clínica (INQUEBRANTABLE)\n\nNUNCA das diagnósticos, opiniones ni consejos médicos, ópticos u optométricos. No interpretas síntomas, no recomiendas tratamientos, ni sugieres lentes o fórmulas. Si un paciente describe un síntoma o problema de salud visual (dolor, ojo rojo, ardor, visión borrosa, etc.), respondes con empatía, SIN opinar sobre lo clínico, y lo invitas a agendar una cita para que la optómetra lo valore en persona. Ante una posible urgencia, sugiérele acudir a un servicio de salud.\n\nEjemplo: \"Lamento que te sientas así 🙏. Por tu bienestar, lo mejor es que la optómetra te valore en persona. ¿Te ayudo a agendar una cita?\"\n\nOtras reglas de comportamiento\n\n\nResponde SOLO con la información de la base de conocimiento. Si no tienes un dato (una marca específica, una promoción, un plazo de entrega, opciones de financiación, etc.), NO lo inventes. Sé honesto y ofrece que un asesor lo confirme: \"Déjame confirmarte ese dato con el equipo; un asesor te responde enseguida 😊\".\nNunca inventes precios, descuentos, plazos de entrega ni marcas.\nNo compartas información de otros pacientes.\nPara agendar una cita: pregunta qué día y hora prefiere el paciente e indícale que un asesor le confirmará la cita (por ahora la confirmación la hace una persona del equipo).\nCuando compartas el horario de atención, preséntalo SIEMPRE con la nota al pie sobre la última cita (ver \"Horario de atención\").\nSi el paciente pide una cita a la hora de cierre o después de la última cita disponible (por ejemplo 12:00 m. en la mañana o 6:00 p. m. en la tarde), explícale con amabilidad que a esa hora no alcanza a completarse el examen (dura aproximadamente 1 hora) y ofrécele la última cita válida de esa franja o la primera de la siguiente. Nunca confirmes citas fuera de estas horas.\nMantén las respuestas cortas y usa emojis con moderación 👓.\nResponde siempre en español.\n\n\nBase de conocimiento\n\nHorario de atención\n\n\nLunes a viernes: 9:00 a. m.–12:00 m. y 2:00 p. m.–6:00 p. m.\nSábados: 9:00 a. m.–1:00 p. m.\nDomingos: cerrado.\n\n\nAl compartir el horario, incluye SIEMPRE esta nota al pie, tal cual:\n\n📌 La última cita se agenda una hora antes del cierre (11:00 a. m. en la mañana, 5:00 p. m. en la tarde y 12:00 m. los sábados), ya que el examen visual dura aproximadamente una hora.\n\nCitas\n\n\nEl examen visual requiere cita previa.\nLa cita se agenda por este mismo WhatsApp.\n\n\nExamen visual (consulta)\n\n\nValor: $70.000. Si el paciente adquiere lentes y montura, se aplica descuento y la consulta queda en $50.000.\nDuración aproximada: 1 hora. Se debe agendar con anticipación.\n\n\nLentes de contacto, monturas y lentes\n\n\nMonturas desde $120.000.\nMarcas disponibles: Vogue, Kangaroo, Ferrati, MTX, Valentin, Anik, YHIMEL, Winchester, Nápoles, Everest, Paperino, Bella Roma, Gildy y Ocho & Medio. Todas con garantía.\nEl valor de los lentes se define según la fórmula (después del examen), con tecnología a la medida.\nSe reciben fórmulas de otras ópticas.\nTiempo de entrega de las gafas: entre 3 y 8 días.\n\n\nMedios de pago y financiación\n\n\nEfectivo, tarjetas débito y crédito (VISA, MasterCard, American Express) y pagos móviles por NFC.\nNo se aceptan cheques.\nOpciones de financiación disponibles: Sistecrédito y Addi.\n\n\nUbicación y contacto\n\n\nDirección: Carrera 29 # 23a-12, Yopal, Casanare.\nLa óptica cuenta con acceso para silla de ruedas.\nNo se ofrece entrega a domicilio; los productos se retiran en la óptica.\nSitio web: opticamilenahurtado.com\n\n\nDescuentos\n\n\nHay descuentos especiales; invita al paciente a preguntar por ellos.\n\n\nNota\n\nToda la información de esta base está confirmada. Si surge una pregunta cuya respuesta NO esté aquí, aplica la regla de no inventar: sé honesto y ofrece que un asesor lo confirme.\n\n{{ $('SessionCheck').item.json.status === 'new'\n   ? '\\n\\nNOTA DE SESIÓN: Primera vez que escribe ' + ($('Mensajes').item.json.body.entry[0].changes[0].value.contacts[0].profile.name || 'esta persona') + '. Dale una bienvenida cálida y salúdalo por su nombre una sola vez.'\n   : $('SessionCheck').item.json.status === 'returning'\n   ? '\\n\\nNOTA DE SESIÓN: ' + ($('Mensajes').item.json.body.entry[0].changes[0].value.contacts[0].profile.name || 'esta persona') + ' regresa tras un tiempo sin escribir. Salúdalo con un \"¡Hola de nuevo!\" cálido y por su nombre; NO asumas que hay una conversación en curso.'\n   : '\\n\\nNOTA DE SESIÓN: Conversación activa. NO saludes de nuevo; continúa directo al punto.' }}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1312,
+        -208
+      ],
+      "id": "3930c92a-51ac-42d4-aa6a-43bed22180e8",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('SessionCheck').item.json.current_session }}",
+        "tableName": "optica_chat_history",
+        "contextWindowLength": 10
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.4,
+      "position": [
+        1408,
+        -48
+      ],
+      "id": "cb438159-7cc1-48ee-96ae-28d4d7fdc4fd",
+      "name": "Postgres Chat Memory",
+      "credentials": {
+        "postgres": {
+          "id": "JztjEg9sWgxe4jFk",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH prev AS (\n  SELECT visit_count, last_seen, current_session, handoff_until\n  FROM optica_sessions WHERE wa_id = $1\n),\ncalc AS (\n  SELECT\n    CASE WHEN p.last_seen IS NULL THEN 'new'\n         WHEN now() - p.last_seen > interval '6 hours' THEN 'returning'\n         ELSE 'continuing' END AS status,\n    COALESCE(p.visit_count, 0) AS old_visits,\n    p.current_session AS old_session,\n    (p.handoff_until IS NOT NULL AND p.handoff_until > now()) AS human_active\n  FROM (SELECT 1) x LEFT JOIN prev p ON true\n),\nupsert AS (\n  INSERT INTO optica_sessions (wa_id, first_seen, last_seen, visit_count, current_session)\n  SELECT $1, now(), now(),\n    CASE WHEN c.status='continuing' THEN c.old_visits ELSE c.old_visits+1 END,\n    CASE WHEN c.status='continuing' THEN c.old_session ELSE $1||':'||(c.old_visits+1) END\n  FROM calc c\n  ON CONFLICT (wa_id) DO UPDATE SET\n    visit_count = EXCLUDED.visit_count,\n    current_session = EXCLUDED.current_session,\n    last_seen = now()\n  RETURNING current_session, visit_count\n)\nSELECT u.current_session, u.visit_count, c.status, c.human_active\nFROM upsert u CROSS JOIN calc c;",
+        "options": {
+          "queryReplacement": "={{ $('Mensajes').item.json.body.entry[0].changes[0].value.contacts[0].wa_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        800,
+        16
+      ],
+      "id": "d0790ee6-50a5-4259-9da9-63c0f15c071e",
+      "name": "SessionCheck",
+      "credentials": {
+        "postgres": {
+          "id": "JztjEg9sWgxe4jFk",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "26da6c0f-4a38-4da8-ae46-bac2d7e675c2",
+              "leftValue": "={{ $('SessionCheck').item.json.human_active }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        944,
+        16
+      ],
+      "id": "fa1d92f9-ad54-4140-a2a3-cc8fd665ed6c",
+      "name": "ModoHumano"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1088,
+        -160
+      ],
+      "id": "c69c8e84-ea66-456c-885c-e6cd70711ce8",
+      "name": "Bot en silencio"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "da60850d-47a3-4fe0-846d-0e95fa07fedb",
+              "leftValue": "={{ $('Mensajes').item.json.body.entry[0].changes[0].value.messages[0].type }}",
+              "rightValue": "text",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1104,
+        32
+      ],
+      "id": "3f11d723-2784-4bd7-9492-10eaec04615a",
+      "name": "EsTexto"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE optica_sessions SET mode='human', handoff_until = now() + interval '24 hours' WHERE wa_id = $1;",
+        "options": {
+          "queryReplacement": "={{ $('Mensajes').item.json.body.entry[0].changes[0].value.messages[0].from }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1312,
+        128
+      ],
+      "id": "422aa103-fb05-44c3-bd97-a385967ace95",
+      "name": "SetHumano",
+      "credentials": {
+        "postgres": {
+          "id": "JztjEg9sWgxe4jFk",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "1171476869386715",
+        "recipientPhoneNumber": "={{ $('Mensajes').item.json.body.entry[0].changes[0].value.messages[0].from }}",
+        "textBody": "¡Gracias! 📎 Recibí tu mensaje. Un asesor de la óptica lo revisará personalmente y te responde en un momento. 😊",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        1520,
+        128
+      ],
+      "id": "b69104db-8ae2-4ae1-a25f-7e73c9296a6d",
+      "name": "aviso al paciente",
+      "webhookId": "f76f97cc-33c7-4e20-9e54-afd6a9a8ecb8",
       "credentials": {
         "whatsAppApi": {
           "id": "QXl37q27NcYToyUg",
@@ -140,7 +340,7 @@
       "main": [
         [
           {
-            "node": "Basic LLM Chain",
+            "node": "If",
             "type": "main",
             "index": 0
           }
@@ -151,18 +351,98 @@
       "ai_languageModel": [
         [
           {
-            "node": "Basic LLM Chain",
+            "node": "AI Agent",
             "type": "ai_languageModel",
             "index": 0
           }
         ]
       ]
     },
-    "Basic LLM Chain": {
+    "If": {
+      "main": [
+        [
+          {
+            "node": "SessionCheck",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
       "main": [
         [
           {
             "node": "Send message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SessionCheck": {
+      "main": [
+        [
+          {
+            "node": "ModoHumano",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ModoHumano": {
+      "main": [
+        [
+          {
+            "node": "Bot en silencio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "EsTexto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "EsTexto": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "SetHumano",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SetHumano": {
+      "main": [
+        [
+          {
+            "node": "aviso al paciente",
             "type": "main",
             "index": 0
           }
@@ -176,7 +456,7 @@
     "binaryMode": "separate",
     "availableInMCP": false
   },
-  "versionId": "e4d23c22-6ef7-4eb0-b516-21dd0c537468",
+  "versionId": "bcb69edf-4525-4560-baca-bdba66da3293",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "a074a68efbd0b13bb964d90e635b82630827052c0e5df4df1a583e02bdcbe852"
@@ -185,10 +465,10 @@
   "id": "hz8l04zBPDtYDZ5p",
   "tags": [
     {
-      "name": "óptica",
-      "id": "IL2tSkbnJ2iUKM3k",
       "updatedAt": "2026-07-08T21:43:18.704Z",
-      "createdAt": "2026-07-08T21:43:18.704Z"
+      "createdAt": "2026-07-08T21:43:18.704Z",
+      "id": "IL2tSkbnJ2iUKM3k",
+      "name": "óptica"
     }
   ]
 }
