@@ -43,6 +43,7 @@ Paciente (WhatsApp) ⇄ Meta Cloud API
 | **Handoff a humano** | Escala por: multimedia (fórmulas, comprobantes), petición explícita de asesor, o consultas de estado que solo el equipo conoce (marcador `##HANDOFF##` emitido por el LLM y detectado en n8n). Alerta por **Telegram** y pausa el bot 24 h **por paciente**. |
 | **Anti-cruce (echo-pausa)** | Si un humano responde desde la app, el webhook echo pausa al bot 2 h para ese paciente. Bot y asesor nunca se pisan. |
 | **Gate de horario** | El bot solo conversa **fuera del horario de atención**; en horario, el equipo atiende desde la app (alertas de Telegram activas siempre). |
+| **Festivos automáticos** | Los 18 festivos colombianos se sincronizan solos desde la API pública **Nager.Date** (incluye traslados por Ley Emiliani). Un festivo cuenta como día cerrado: el bot **sí atiende** (el equipo no está) y **nunca agenda** citas en esa fecha. Cero mantenimiento manual. |
 | **Cierre por inactividad** | Workflow programado: a la hora sin respuesta envía despedida elegante y cierra la sesión (respetando la ventana de 24 h de Meta). |
 | **Personal interno** | Números del equipo en tabla `optica_staff` (Postgres, **fuera del repo** por privacidad) → el bot los ignora por completo. |
 | **Formato WhatsApp** | Regla de estilo + saneo programático `**`→`*` para que la negrita renderice bien en WhatsApp. |
@@ -53,12 +54,16 @@ Paciente (WhatsApp) ⇄ Meta Cloud API
 optica_chat_history   -- memoria conversacional (Postgres Chat Memory de n8n), indexada por session key rotativa "wa_id:N"
 optica_sessions       -- estado por paciente: first_seen, last_seen, visit_count, current_session, mode (bot|human), handoff_until, farewell_at
 optica_staff          -- números internos que el bot ignora (privacidad: viven en BD, no en el workflow ni el repo)
+optica_festivos       -- festivos oficiales de Colombia (fecha PK, nombre); poblada automáticamente desde Nager.Date
 ```
+
+`SessionCheck` es una sola consulta que hace todo el trabajo de estado: upsert de la sesión, cálculo de `new/returning/continuing`, rotación de session key, `human_active`, `es_festivo` y la lista de festivos próximos. Una fuente de verdad para los gates y para el prompt.
 
 ## Workflows n8n
 
 1. **`optica-faq-bot`** (principal): Webhook (GET verificación + POST mensajes) → filtro (mensaje real + no-echo + no-staff) → `SessionCheck` (upsert de sesión + detección new/returning/continuing + `human_active`) → gate modo-humano → gate texto/no-texto → gate de horario → **AI Agent** (Claude Haiku 4.5 + Postgres Chat Memory) → detección `##HANDOFF##` → envío vía Dualhook. Ramas paralelas: escalamiento multimedia y echo-pausa.
 2. **`optica-cierre-inactividad`**: Schedule cada 15 min → despedida a sesiones de bot inactivas ≥ 1 h (una sola vez, dentro de la ventana de 24 h).
+3. **`optica-sync-festivos`**: Schedule mensual → Code (año actual + siguiente) → HTTP Request a `date.nager.at` → upsert idempotente en `optica_festivos`. Mensual y no anual a propósito: si una corrida falla, se recupera sola al mes siguiente.
 
 ## Seguridad y privacidad
 
@@ -119,6 +124,10 @@ Documentar lo que salió mal vale más que lo que salió bien. Todo esto pasó d
 | El bot le respondía a la optómetra | Su número personal no se distinguía de un paciente | Tabla **`optica_staff`** en Postgres (números fuera del repo) + gate al inicio del flujo |
 | Conversaciones quedaban "abiertas" para siempre | Sin política de cierre | Workflow de **despedida a la hora de inactividad** (una vez, `farewell_at`) |
 | Riesgo de exponer números personales en el repo | Condiciones hardcodeadas en el workflow | Mover la lista a la BD; checklist de saneo del JSON antes de publicar |
+| **Festivos: el peor escenario silencioso** | El gate de horario solo miraba día y hora → un festivo se trataba como día laboral: el bot callaba **y** el equipo no estaba → paciente sin respuesta de nadie | Tabla `optica_festivos` + `es_festivo` en `SessionCheck` + `&& !es_festivo` en ambos gates |
+| Owly no avisaba del festivo aunque el gate ya funcionaba | Se le pasaba una *lista* de fechas y se esperaba que él dedujera si hoy estaba incluida (aritmética de fechas = frágil). Además, el festivo de prueba se llamaba "PRUEBA — borrar" y el modelo lo descartó como artefacto | Inyectar un **indicador explícito** `¿HOY ES FESTIVO?: SÍ/No` desde el booleano de la BD + instrucción de confiar en él aunque el nombre parezca de prueba |
+| Mantenimiento anual de festivos (fácil de olvidar) | Lista manual año a año | Workflow de sync con **Nager.Date** (API pública, sin auth) → se auto-alimenta para siempre |
+| Sospecha de bug al ver el flujo morir en "Bot en silencio" | Los gates están en serie: el primero que aplica corta el flujo (una pausa por-paciente gana antes de evaluar el horario) | No es bug: es defensa en profundidad. El `human_active` visible en el output de `SessionCheck` explica cada camino |
 
 ---
 
@@ -129,6 +138,8 @@ Documentar lo que salió mal vale más que lo que salió bien. Todo esto pasó d
 3. **Un bot con memoria necesita política de sesiones.** "Recordar todo por número" produce contextos rancios; la rotación de session key con estados new/returning/continuing lo resuelve con una sola tabla.
 4. **El LLM no debe prometer lo que el sistema no hace.** "Te agendo" y "enseguida" son bugs de producto, no de modelo: se corrigen con reglas explícitas de rol y de lenguaje.
 5. **Los humanos son parte de la arquitectura.** Gate de horario, echo-pausa, staff-list y handoff convierten un chatbot en un **sistema híbrido humano+IA** operable en un negocio real.
+6. **Decide en el código, no en el prompt.** Cuando el sistema ya sabe algo con certeza (¿hoy es festivo? ¿está en horario?), pásale al LLM un **booleano explícito**, no datos para que los deduzca. Cada cálculo que se le delega al modelo es un bug latente.
+7. **Los calendarios locales son requisitos, no detalles.** Festivos, cierres de mediodía y zonas horarias son reglas de negocio de primera clase: si el bot no las conoce, falla justo los días en que más se nota.
 
 ## Roadmap
 
