@@ -1,185 +1,143 @@
-# 👓 Óptica WhatsApp FAQ Bot
+# 🦉 optica-bot-stack — Owly, asistente de WhatsApp para una óptica en Colombia
 
-Bot de WhatsApp que responde las preguntas frecuentes de los pacientes de una óptica
-(horarios, precios, marcas de monturas) usando IA con RAG, autoalojado en AWS.
-Diseñado con una regla innegociable: **nunca da consejo clínico** — cualquier consulta
-médica se deriva al optómetra.
+Bot de WhatsApp en **producción** para una óptica real en Colombia. Atiende pacientes por el **número oficial del negocio** mediante **coexistencia** (la app de WhatsApp Business y la Cloud API conviven en el mismo número): el equipo humano atiende en horario laboral desde la app, y **Owly** 🦉 —el asistente virtual con IA— atiende cuando la óptica está cerrada.
 
-> Estado: 🟢 Infraestructura montada y funcionando · 🟡 Lógica del bot en construcción
+> Proyecto real, con cliente real, corriendo 24/7 sobre AWS free tier. Este README documenta la arquitectura, las decisiones de diseño y —sobre todo— la **bitácora de problemas reales** encontrados y resueltos en el camino a producción.
 
 ---
 
-## 🎯 Qué hace (y qué no)
-
-- ✅ Responde FAQ: horarios, precios del examen visual, marcas disponibles.
-- ✅ Deriva al optómetra ante cualquier síntoma o consulta clínica (guardrail de seguridad).
-- ❌ No agenda citas ni consulta inventario (fuera del alcance del MVP).
-- ❌ No diagnostica ni da recomendaciones médicas.
-
-## 🏗️ Arquitectura
+## Arquitectura
 
 ```
-Paciente (WhatsApp)
-      │
-      ▼
-WhatsApp Cloud API (Meta)
-      │
-      ▼
-Caddy (HTTPS automático, Let's Encrypt)
-      │
-      ▼
-n8n (orquestador)  ──►  RAG sobre pgvector (base de conocimiento de la óptica)
-      │                        + guardrail clínico
-      ▼
-Claude (Anthropic API) redacta la respuesta
+Paciente (WhatsApp) ⇄ Meta Cloud API
+                          │  webhooks (directo, Webhook Override)
+                          ▼
+      Caddy (HTTPS, sslip.io) ─→ n8n (workflow "optica-faq-bot")
+                                      │
+              ┌───────────────────────┼──────────────────────────┐
+              ▼                       ▼                          ▼
+      Postgres (pgvector)      Claude Haiku 4.5           Telegram Bot API
+      · memoria de chat        (Anthropic API)            (alertas al equipo)
+      · sesiones/estado        cerebro conversacional
+      · lista de personal
+                          envío de respuestas
+                                      │
+                                      ▼
+                     Dualhook (BSP · api.dualhook.com) ─→ Meta ─→ Paciente
 ```
 
-Todo corre en una sola instancia EC2 con Docker Compose.
+- **Infraestructura:** AWS EC2 t3.micro · Docker Compose (Caddy + n8n + Postgres/pgvector) · Elastic IP · dominio sslip.io · acceso por SSM Session Manager (sin SSH).
+- **Coexistencia:** [Dualhook](https://dualhook.com) (Meta Tech Partner) habilita el Embedded Signup y el **Webhook Override**: los mensajes entrantes van **directo de Meta a n8n** (Dualhook no almacena mensajes); el envío sale por la API de Dualhook con una key propia.
+- **Recepción gratuita:** el bot solo responde dentro de la ventana de servicio de 24 h de Meta (conversaciones iniciadas por el paciente) → costo de mensajería ≈ $0 a este volumen.
 
-## 🧰 Stack tecnológico
+## Funcionalidades del bot
 
-| Capa | Tecnología |
-|------|-----------|
-| Orquestación | n8n (self-hosted) |
-| RAG / Vector store | pgvector sobre PostgreSQL |
-| Modelo de lenguaje | Claude (Anthropic API) |
-| Canal | WhatsApp Cloud API |
-| Reverse proxy / TLS | Caddy (Let's Encrypt automático) |
-| DNS (MVP) | sslip.io (gratis, sobre Elastic IP fija) |
-| Infraestructura | AWS EC2 (`t3.micro`) + EBS + Elastic IP |
-| Acceso seguro | AWS Systems Manager (SSM) Session Manager — sin puerto 22 |
-| Contenedores | Docker + Docker Compose |
+| Área | Detalle |
+|---|---|
+| **Identidad** | Se presenta siempre como *Owly, el asistente virtual* — nunca se hace pasar por humano ni por la optómetra. |
+| **FAQ** | Horarios, precios, marcas, medios de pago, ubicación — solo desde una base de conocimiento curada (cero invención). |
+| **Guardrail clínico** | Regla inquebrantable: no diagnostica ni opina sobre síntomas; deriva a consulta presencial. |
+| **Citas** | Valida fecha/hora contra franjas reales (incluye cierre de mediodía y última cita 1 h antes del cierre, con fecha actual inyectada en zona `America/Bogota`). **No agenda**: registra la solicitud y un asesor confirma. |
+| **Captura de datos** | Plantilla de agendamiento con **enlace a la política de privacidad ANTES de pedir datos** (Ley 1581). Distingue paciente nuevo vs. existente. Sin datos sensibles por chat (p. ej. grupo sanguíneo → se toma presencial). |
+| **Memoria por paciente** | Historial en Postgres por número, con **sesiones con caducidad**: `new` / `returning` / `continuing` (rotación de session key → un paciente que vuelve meses después no arrastra contexto viejo). |
+| **Handoff a humano** | Escala por: multimedia (fórmulas, comprobantes), petición explícita de asesor, o consultas de estado que solo el equipo conoce (marcador `##HANDOFF##` emitido por el LLM y detectado en n8n). Alerta por **Telegram** y pausa el bot 24 h **por paciente**. |
+| **Anti-cruce (echo-pausa)** | Si un humano responde desde la app, el webhook echo pausa al bot 2 h para ese paciente. Bot y asesor nunca se pisan. |
+| **Gate de horario** | El bot solo conversa **fuera del horario de atención**; en horario, el equipo atiende desde la app (alertas de Telegram activas siempre). |
+| **Cierre por inactividad** | Workflow programado: a la hora sin respuesta envía despedida elegante y cierra la sesión (respetando la ventana de 24 h de Meta). |
+| **Personal interno** | Números del equipo en tabla `optica_staff` (Postgres, **fuera del repo** por privacidad) → el bot los ignora por completo. |
+| **Formato WhatsApp** | Regla de estilo + saneo programático `**`→`*` para que la negrita renderice bien en WhatsApp. |
 
-## ✅ Requisitos previos
+## Modelo de datos (Postgres)
 
-- Cuenta de AWS con una instancia EC2 (Ubuntu) y una Elastic IP asociada.
-- Docker y Docker Compose en la instancia.
-- Un dominio que resuelva a la IP (para el MVP usamos `<IP>.sslip.io`, gratis).
-- Acceso a la instancia vía SSM Session Manager.
-
-## 🚀 Despliegue (resumen)
-
-```bash
-# 1. Clona el repo en la instancia
-git clone <URL-del-repo> optica-bot-stack && cd optica-bot-stack
-
-# 2. Genera el .env con secretos aleatorios (te pide el dominio)
-bash setup.sh
-
-# 3. Levanta el stack
-docker compose up -d
-
-# 4. Verifica
-docker compose ps
-docker compose logs -f caddy   # espera "certificate obtained successfully"
+```sql
+optica_chat_history   -- memoria conversacional (Postgres Chat Memory de n8n), indexada por session key rotativa "wa_id:N"
+optica_sessions       -- estado por paciente: first_seen, last_seen, visit_count, current_session, mode (bot|human), handoff_until, farewell_at
+optica_staff          -- números internos que el bot ignora (privacidad: viven en BD, no en el workflow ni el repo)
 ```
 
-Luego abre `https://<tu-dominio>` y crea la cuenta de dueño de n8n.
+## Workflows n8n
 
-## 🔐 Seguridad
+1. **`optica-faq-bot`** (principal): Webhook (GET verificación + POST mensajes) → filtro (mensaje real + no-echo + no-staff) → `SessionCheck` (upsert de sesión + detección new/returning/continuing + `human_active`) → gate modo-humano → gate texto/no-texto → gate de horario → **AI Agent** (Claude Haiku 4.5 + Postgres Chat Memory) → detección `##HANDOFF##` → envío vía Dualhook. Ramas paralelas: escalamiento multimedia y echo-pausa.
+2. **`optica-cierre-inactividad`**: Schedule cada 15 min → despedida a sesiones de bot inactivas ≥ 1 h (una sola vez, dentro de la ventana de 24 h).
 
-- **Sin puerto 22 abierto:** el acceso es por SSM Session Manager (agente saliente, sin puertos de entrada).
-- **Mínimo privilegio:** usuario IAM acotado solo a las acciones SSM necesarias.
-- **Secretos fuera del repo:** `.env`, llaves y tokens están en `.gitignore`. Solo se versiona `.env.example`.
-- **HTTPS obligatorio:** Caddy gestiona el certificado TLS automáticamente.
+## Seguridad y privacidad
 
-## 📁 Estructura del repo
-
-```
-.
-├── docker-compose.yml   # n8n + Postgres/pgvector + Caddy
-├── Caddyfile            # reverse proxy + HTTPS automático
-├── .env.example         # plantilla de variables (sin secretos)
-├── setup.sh             # genera .env con secretos aleatorios
-├── .gitignore           # protege secretos y datos de runtime
-└── README.md
-```
+- Token **permanente** de Usuario del Sistema de Meta (nada de tokens de 24 h).
+- El LLM **no escribe SQL**: toda consulta va por nodos Postgres parametrizados.
+- Política de privacidad pública (HTTPS vía GitHub Pages) conforme a **Ley 1581 de 2012** y Decreto 1377: responsable identificado, datos sensibles, menores, plazos de consulta/reclamo. Consentimiento informado **antes** de la captura de datos.
+- Dualhook con arquitectura de **cero almacenamiento de mensajes** (webhooks directos Meta→servidor propio).
+- Números del personal y credenciales fuera del repositorio (BD + credenciales de n8n). ⚠️ Antes de exportar el workflow: revisar el JSON por tokens/números.
 
 ---
 
-## 🐞 Gotchas & Lecciones aprendidas
+## 🪖 Bitácora de guerra: problemas reales y sus soluciones
 
-Registro honesto de los obstáculos al montar la infraestructura y cómo se resolvieron.
-La parte más valiosa del proyecto para entender *cómo se debuggea* infra real.
+Documentar lo que salió mal vale más que lo que salió bien. Todo esto pasó de verdad.
 
-### Acceso y conexión
+### Fase 1 — Infraestructura y Cloud API
+| Problema | Causa raíz | Solución |
+|---|---|---|
+| Let's Encrypt fallaba con DuckDNS | Resolución DNS global inconsistente | Migrar a **sslip.io** (resuelve siempre a la IP embebida) |
+| Disco lleno al hacer `docker pull` en t3.micro | 8 GB por defecto + imágenes pesadas | `growpart` + `resize2fs` a 30 GB + swapfile de 2 GB |
+| Webhook de n8n no se registraba solo | Auto-registro poco confiable | **Dos nodos webhook manuales** (GET verificación + POST mensajes) con el mismo path |
+| Meta no entregaba mensajes al webhook | WABA suscrita a la app interna de Meta, no a la propia | `POST` manual a `subscribed_apps` con la app correcta |
+| "Prompt required" persistente en n8n | El campo de prompt requiere elegir "Define below" antes de aceptar expresiones | Seleccionar el modo del campo **antes** de pegar la expresión |
+| El bot moría cada 24 h | Token temporal de Meta | **Usuario del Sistema** con token sin expiración (no requiere verificación del negocio) |
 
-**EC2 Instance Connect / SSH fallaban.** La regla del puerto 22 estaba atada a "My IP",
-pero el navegador conecta desde el rango de AWS, y mi IP residencial es dinámica (apago el
-router cada noche). → Migrado a **SSM Session Manager** y puerto 22 cerrado.
-*Lección: con IP dinámica, usa un agente saliente (SSM) en vez de pelear con reglas de IP entrante.*
+### Fase 2 — Memoria e inteligencia
+| Problema | Causa raíz | Solución |
+|---|---|---|
+| Basic LLM Chain no soporta memoria | Por diseño: "None of the chain nodes support memory" (docs n8n) | Migrar a **AI Agent** + sub-nodo **Postgres Chat Memory** |
+| `localhost` en la credencial Postgres no conectaba | Dentro del contenedor, localhost = el propio n8n | Usar el **nombre del servicio** del compose (`postgres`) como host |
+| El envío quedó vacío tras migrar a AI Agent | El chain devuelve `text`; el Agent devuelve `output` | Actualizar la referencia en el nodo de envío |
+| Saludo repetido / contexto rancio de hace meses | Memoria plana por número | **Sesiones con caducidad** y rotación de session key (`wa_id:N`) + estados new/returning/continuing |
+| El bot aceptaba citas a la 1:00 p. m. | No sabía la fecha actual ni el cierre de mediodía | Inyectar `$now` en zona Bogotá al prompt + franjas de inicio válidas explícitas |
+| Pacientes creían hablar con la optómetra | El bot no se identificaba | Identidad **Owly** obligatoria en saludos + prohibido hacerse pasar por humano |
+| "Un asesor te responde *enseguida*" (falso fuera de horario) | Redacción optimista del prompt | Regla: prohibido prometer tiempos; fórmula fija "tan pronto como le sea posible" |
+| El bot decía "te agendo" (no puede agendar) | Prompt ambiguo | Regla: el bot **solo registra la solicitud**; el asesor confirma disponibilidad y agenda |
 
-**AWS CLI v2 — efecto dominó.** `unzip` no estaba instalado en WSL; al fallar la
-descompresión, todos los pasos siguientes cayeron en cadena.
-*Lección: lee el log de arriba abajo e identifica el primer error real.*
+### Fase 3 — Coexistencia (la saga)
+| Problema | Causa raíz | Solución |
+|---|---|---|
+| La coexistencia no aparece en el panel de Meta para apps propias | Meta la reserva al **Embedded Signup de un BSP/Tech Partner** | Evaluar BSPs → elegir **Dualhook** ($12/mes, webhook override, sin almacenar mensajes, cancelable) |
+| "Agregar número" en el panel de developers pedía OTP | Ese flujo es **migración** (saca el número de la app), no coexistencia | Abortar y usar solo el Embedded Signup del BSP |
+| El popup de Meta terminaba pero Dualhook mostraba "0 connections" (×2) | El *handoff* de regreso del popup al tab original era bloqueado por el navegador | Ver fila siguiente 👇 |
+| Retry fallaba con `#2388002` (eligibility) | El número quedó **medio-conectado** del intento anterior | **Desconectar la conexión de plataforma en la app** → esperar 15 min → reintentar |
+| El handoff seguía fallando en Firefox "limpio" | **Total Cookie Protection** de Firefox rompe el OAuth cross-site incluso con el escudo apagado | Navegador **Chromium (Edge)** + **McAfee WebAdvisor desactivado** + cookies de terceros + popups permitidos + pestaña original abierta → ✅ a la tercera |
+| Sitios de BSPs "caídos" solo en el PC | McAfee (WebAdvisor/VPN) bloqueando dominios | Diagnóstico con hosts limpio + prueba externa; desactivar/reiniciar. *Moraleja: verificar desde otra red antes de descartar un proveedor* |
+| El bot recibía pero no respondía (post-migración) | El campo JSON del HTTP Request recibía un objeto JS → `[object Object]` | Envolver el body en **`JSON.stringify(...)`** |
+| Seguía sin ser JSON válido | Un `=` sobrante al inicio de la expresión (el campo ya estaba en modo expresión) | Quitar el `=` literal |
+| El bot le respondía al asesor | Los **echoes** (mensajes del propio negocio) entraban como mensajes | Filtro `from ≠ número del negocio` + rama echo separada |
+| `EchoPausa` fallaba con "no parameter $1" | A esa rama también llegaban eventos `statuses` sin número | Gate `EsEcho` (`Array.isArray(value.message_echoes)`) antes del UPDATE |
+| Salud de Meta en "BLOCKED" para envíos | Método de pago con error en la WABA (bloquea solo **plantillas** iniciadas por el negocio) | No afecta respuestas de servicio (el caso de uso actual); corregir método de pago cuando se activen recordatorios |
 
-**El plugin de Session Manager es aparte.** `aws ssm start-session` falla aunque el CLI esté
-instalado, si falta el `session-manager-plugin`.
-
-### IAM y permisos
-
-**Access Keys ≠ contraseña de la consola.** Son credenciales de máquina que se generan en
-IAM. → Usuario dedicado (`vladt-cli`) con permisos acotados; nunca las llaves de root.
-
-**⭐ El gotcha estrella — campo de cuenta en ARNs de documentos SSM.** Los documentos
-gestionados por AWS (prefijo `AWS-`, ej. `AWS-StartSSHSession`) usan el campo de cuenta
-**vacío** en el ARN (`...ssm:us-east-1::document/...`). Los creados en tu cuenta
-(prefijo `SSM-`) **sí** llevan el account ID. Confundir esto causó dos `AccessDenied`
-opuestos. *Lección: el prefijo del documento te dice si el ARN lleva account ID o no.*
-
-**Un usuario acotado no puede leerse a sí mismo.** `aws iam list-attached-user-policies` dio
-`AccessDenied` — comportamiento correcto del mínimo privilegio, no un error.
-
-**`scp` sobre SSM necesita permiso extra.** Usa el documento `AWS-StartSSHSession`, distinto
-del de las sesiones interactivas.
-
-### Llaves SSH y entornos
-
-**`Permission denied (publickey)`.** La llave pública nunca había quedado en el
-`authorized_keys` de la instancia (un `echo` se ejecutó por error en WSL en vez de en el
-servidor). *Lección: el prompt es la brújula — `vladt@VladtTempest` = local,
-`ubuntu@ip-...` = servidor. Míralo antes de cada comando con efectos.*
-
-**`ssh-keygen` ofreciendo sobreescribir.** Responder `n`: nunca sobreescribas una llave
-existente sin saber que nadie la usa.
-
-### Almacenamiento y costos
-
-**Disco lleno al bajar n8n** (`no space left on device`). El EBS por defecto (8 GB) es
-insuficiente. → `Modify volume` a 30 GB + `growpart` + `resize2fs` (en caliente).
-*Lección: agrandar el volumen en AWS no expande el filesystem solo.*
-
-**Elastic IP huérfana = cobro silencioso.** AWS cobra las Elastic IP no asociadas a una
-instancia corriendo. → Liberar las que no se usen.
-
-**Swap en `t3.micro`.** 1 GB de RAM es justo; un swapfile de 2 GB amortigua los picos sin
-caídas por OOM.
-
-### DNS y certificados
-
-**⭐ El boss final — Caddy + Let's Encrypt + DuckDNS.** El certificado no se emitía:
-`During secondary validation: DNS problem: query timed out`. Let's Encrypt valida desde
-múltiples perspectivas globales, y los nameservers gratuitos de DuckDNS respondían de forma
-inconsistente (reproducido con `dig @1.1.1.1` ✅ vs `dig @8.8.8.8` ❌). → Migrado a
-**sslip.io**; certificado emitido al primer intento.
-*Lección: si LE falla por "secondary validation DNS timeout" pero tu servidor es alcanzable,
-sospecha del proveedor de DNS. Verifícalo con `dig` contra varios resolvedores públicos.*
-
-**`502 connection refused` tras emitir el certificado.** Caddy ya estaba listo, pero n8n aún
-arrancaba (creando tablas en Postgres). Transitorio, no un error de config.
+### Fase 4 — Refinamiento con uso real
+| Problema | Causa raíz | Solución |
+|---|---|---|
+| Bot y asesor se cruzaban en una misma conversación | Ambos activos a la vez | **Gate de horario** (bot solo con la óptica cerrada) + **echo-pausa** de 2 h por paciente |
+| Negrita con asteriscos visibles (`*texto*`) | El LLM emitía Markdown `**` que WhatsApp no renderiza | Regla de formato WhatsApp en el prompt + saneo `replace(/\*\*/g,'*')` en el envío |
+| El bot le respondía a la optómetra | Su número personal no se distinguía de un paciente | Tabla **`optica_staff`** en Postgres (números fuera del repo) + gate al inicio del flujo |
+| Conversaciones quedaban "abiertas" para siempre | Sin política de cierre | Workflow de **despedida a la hora de inactividad** (una vez, `farewell_at`) |
+| Riesgo de exponer números personales en el repo | Condiciones hardcodeadas en el workflow | Mover la lista a la BD; checklist de saneo del JSON antes de publicar |
 
 ---
 
-## 🗺️ Roadmap
+## Lecciones aprendidas (las grandes)
 
-- [x] Infraestructura: EC2 + SSM + Docker + HTTPS
-- [ ] Conectar WhatsApp Cloud API a n8n
-- [ ] RAG sobre pgvector con las FAQ reales de la óptica
-- [ ] Guardrail clínico (derivar consultas médicas al optómetra)
-- [ ] Conectar Claude como modelo de respuesta
-- [ ] CI/CD: GitHub Actions + SSM SendCommand para auto-deploy
-- [ ] Migrar de sslip.io a un dominio propio (una línea: variable `DOMAIN`)
+1. **La coexistencia requiere un BSP.** No hay botón self-service en la Cloud API directa. Elegir un BSP con *webhook override* preserva la arquitectura propia (los payloads siguen en formato Meta → rework mínimo).
+2. **El navegador importa en los flujos OAuth de Meta.** Antivirus con "web protection", VPNs, Total Cookie Protection y popups bloqueados rompen el Embedded Signup de formas silenciosas. Chromium limpio + cookies de terceros + pestaña original abierta.
+3. **Un bot con memoria necesita política de sesiones.** "Recordar todo por número" produce contextos rancios; la rotación de session key con estados new/returning/continuing lo resuelve con una sola tabla.
+4. **El LLM no debe prometer lo que el sistema no hace.** "Te agendo" y "enseguida" son bugs de producto, no de modelo: se corrigen con reglas explícitas de rol y de lenguaje.
+5. **Los humanos son parte de la arquitectura.** Gate de horario, echo-pausa, staff-list y handoff convierten un chatbot en un **sistema híbrido humano+IA** operable en un negocio real.
 
-## 📄 Licencia
+## Roadmap
 
-Por definir.
+- [ ] Corregir método de pago en la WABA → habilitar plantillas (recordatorios/confirmaciones de cita).
+- [ ] Evaluar **Meta Business Agent** cuando llegue a Colombia (posible reemplazo del BSP).
+- [ ] HTTPS para el dominio principal de la óptica (Cloudflare).
+- [ ] README en inglés para alcance internacional del portafolio.
+- [ ] WhatsApp Flows para captura estructurada de datos de agendamiento.
+
+---
+
+*Construido con n8n, Claude (Anthropic), Postgres y paciencia. Owly 🦉 atiende cuando la óptica duerme.*
