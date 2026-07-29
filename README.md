@@ -1,4 +1,8 @@
-# 🦉 optica-bot-stack — Owly, asistente de WhatsApp para una óptica en Colombia
+# 🦉 optica-bot-stack — Owly, asistente de WhatsApp para una óptica
+
+**🇪🇸 Español** · [🇬🇧 English](README.en.md)
+
+> ℹ️ Los datos del cliente (nombre comercial, dirección, teléfono y personal) se han **anonimizado** en esta documentación. La arquitectura, el código y los aprendizajes son los reales.
 
 Bot de WhatsApp en **producción** para una óptica real en Colombia. Atiende pacientes por el **número oficial del negocio** mediante **coexistencia** (la app de WhatsApp Business y la Cloud API conviven en el mismo número): el equipo humano atiende en horario laboral desde la app, y **Owly** 🦉 —el asistente virtual con IA— atiende cuando la óptica está cerrada.
 
@@ -34,7 +38,7 @@ Paciente (WhatsApp) ⇄ Meta Cloud API
 
 | Área | Detalle |
 |---|---|
-| **Identidad** | Se presenta siempre como *Owly, el asistente virtual* — nunca se hace pasar por humano ni por la optómetra. |
+| **Identidad** | Se presenta siempre como *Owly, el asistente virtual* — nunca se hace pasar por humano ni por personal clínico. |
 | **FAQ** | Horarios, precios, marcas, medios de pago, ubicación — solo desde una base de conocimiento curada (cero invención). |
 | **Guardrail clínico** | Regla inquebrantable: no diagnostica ni opina sobre síntomas; deriva a consulta presencial. |
 | **Citas** | Valida fecha/hora contra franjas reales (incluye cierre de mediodía y última cita 1 h antes del cierre, con fecha actual inyectada en zona `America/Bogota`). **No agenda**: registra la solicitud y un asesor confirma. |
@@ -65,13 +69,30 @@ optica_festivos       -- festivos oficiales de Colombia (fecha PK, nombre); pobl
 2. **`optica-cierre-inactividad`**: Schedule cada 15 min → despedida a sesiones de bot inactivas ≥ 1 h (una sola vez, dentro de la ventana de 24 h).
 3. **`optica-sync-festivos`**: Schedule mensual → Code (año actual + siguiente) → HTTP Request a `date.nager.at` → upsert idempotente en `optica_festivos`. Mensual y no anual a propósito: si una corrida falla, se recupera sola al mes siguiente.
 
+### Capturas del canvas
+
+| Workflow | Vista |
+|---|---|
+| `optica-faq-bot` | ![Canvas del workflow principal](docs/canvas-faq-bot.png) |
+| `optica-cierre-inactividad` | ![Canvas del cierre por inactividad](docs/canvas-cierre-inactividad.png) |
+| `optica-sync-festivos` | ![Canvas de la sincronización de festivos](docs/canvas-sync-festivos.png) |
+
+## Qué hay (y qué no) en este repositorio
+
+Este repositorio es **documentación de arquitectura**, no un despliegue listo para ejecutar.
+
+**Incluye:** este README, el prompt del sistema en versión de ejemplo (`system_prompt_bot.example.md`), la configuración de infraestructura (`docker-compose.yml`, `Caddyfile`), las migraciones de base de datos y las capturas de los workflows.
+
+**No incluye —a propósito—:** los JSON de los workflows con la configuración real, credenciales, tokens, números de teléfono ni la base de conocimiento del cliente. Esos viven en un repositorio privado y en el servidor. El repositorio público **no es un respaldo**: los respaldos son snapshots de EBS y dumps de Postgres fuera de Git.
+
 ## Seguridad y privacidad
 
 - Token **permanente** de Usuario del Sistema de Meta (nada de tokens de 24 h).
 - El LLM **no escribe SQL**: toda consulta va por nodos Postgres parametrizados.
 - Política de privacidad pública (HTTPS vía GitHub Pages) conforme a **Ley 1581 de 2012** y Decreto 1377: responsable identificado, datos sensibles, menores, plazos de consulta/reclamo. Consentimiento informado **antes** de la captura de datos.
 - Dualhook con arquitectura de **cero almacenamiento de mensajes** (webhooks directos Meta→servidor propio).
-- Números del personal y credenciales fuera del repositorio (BD + credenciales de n8n). ⚠️ Antes de exportar el workflow: revisar el JSON por tokens/números.
+- Números del personal y credenciales fuera del repositorio (BD + credenciales de n8n).
+- Separación deliberada entre **portafolio** (este repo, público y anonimizado) y **operación** (repo privado + servidor). Un mismo artefacto no puede ser a la vez vitrina y respaldo.
 
 ---
 
@@ -97,7 +118,7 @@ Documentar lo que salió mal vale más que lo que salió bien. Todo esto pasó d
 | El envío quedó vacío tras migrar a AI Agent | El chain devuelve `text`; el Agent devuelve `output` | Actualizar la referencia en el nodo de envío |
 | Saludo repetido / contexto rancio de hace meses | Memoria plana por número | **Sesiones con caducidad** y rotación de session key (`wa_id:N`) + estados new/returning/continuing |
 | El bot aceptaba citas a la 1:00 p. m. | No sabía la fecha actual ni el cierre de mediodía | Inyectar `$now` en zona Bogotá al prompt + franjas de inicio válidas explícitas |
-| Pacientes creían hablar con la optómetra | El bot no se identificaba | Identidad **Owly** obligatoria en saludos + prohibido hacerse pasar por humano |
+| Pacientes creían hablar con la profesional de la salud visual | El bot no se identificaba | Identidad **Owly** obligatoria en saludos + prohibido hacerse pasar por humano |
 | "Un asesor te responde *enseguida*" (falso fuera de horario) | Redacción optimista del prompt | Regla: prohibido prometer tiempos; fórmula fija "tan pronto como le sea posible" |
 | El bot decía "te agendo" (no puede agendar) | Prompt ambiguo | Regla: el bot **solo registra la solicitud**; el asesor confirma disponibilidad y agenda |
 
@@ -121,7 +142,7 @@ Documentar lo que salió mal vale más que lo que salió bien. Todo esto pasó d
 |---|---|---|
 | Bot y asesor se cruzaban en una misma conversación | Ambos activos a la vez | **Gate de horario** (bot solo con la óptica cerrada) + **echo-pausa** de 2 h por paciente |
 | Negrita con asteriscos visibles (`*texto*`) | El LLM emitía Markdown `**` que WhatsApp no renderiza | Regla de formato WhatsApp en el prompt + saneo `replace(/\*\*/g,'*')` en el envío |
-| El bot le respondía a la optómetra | Su número personal no se distinguía de un paciente | Tabla **`optica_staff`** en Postgres (números fuera del repo) + gate al inicio del flujo |
+| El bot le respondía al propio personal de la óptica | Sus números personales no se distinguían de los de un paciente | Tabla **`optica_staff`** en Postgres (números fuera del repo) + gate al inicio del flujo |
 | Conversaciones quedaban "abiertas" para siempre | Sin política de cierre | Workflow de **despedida a la hora de inactividad** (una vez, `farewell_at`) |
 | Riesgo de exponer números personales en el repo | Condiciones hardcodeadas en el workflow | Mover la lista a la BD; checklist de saneo del JSON antes de publicar |
 | **Festivos: el peor escenario silencioso** | El gate de horario solo miraba día y hora → un festivo se trataba como día laboral: el bot callaba **y** el equipo no estaba → paciente sin respuesta de nadie | Tabla `optica_festivos` + `es_festivo` en `SessionCheck` + `&& !es_festivo` en ambos gates |
@@ -143,11 +164,17 @@ Documentar lo que salió mal vale más que lo que salió bien. Todo esto pasó d
 
 ## Roadmap
 
-- [ ] Corregir método de pago en la WABA → habilitar plantillas (recordatorios/confirmaciones de cita).
+- [x] Método de pago configurado en la WABA (habilita plantillas cuando se necesiten).
+- [x] README bilingüe (ES/EN) para alcance internacional del portafolio.
+- [ ] Recuperar el permiso `whatsapp_business_management` en el token (requiere re-correr el Embedded Signup; **aplazado a propósito**: no aporta al alcance actual y el número está en producción).
 - [ ] Evaluar **Meta Business Agent** cuando llegue a Colombia (posible reemplazo del BSP).
 - [ ] HTTPS para el dominio principal de la óptica (Cloudflare).
-- [ ] README en inglés para alcance internacional del portafolio.
 - [ ] WhatsApp Flows para captura estructurada de datos de agendamiento.
+- [ ] Refactor **multi-tenant** (un solo workflow + tabla `tenants`) para atender varios negocios.
+
+### Descartado (y por qué)
+
+- **Recordatorios automáticos de cita vía la API de Softix** (el software de historias clínicas de la óptica). Técnicamente viable —la API expone citas, pacientes e inventario— y el costo de mensajería de Meta era irrisorio (~$0.17 USD/mes para 8 citas diarias en Colombia). Se descartó porque **el acceso a la API de Softix tiene un costo que no justifica el caso de uso**: hoy el asesor envía los recordatorios manualmente sin fricción. *Lección: verificar el costo de la API del software del cliente ANTES de prometer integraciones.*
 
 ---
 
