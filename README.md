@@ -73,15 +73,15 @@ optica_festivos       -- festivos oficiales de Colombia (fecha PK, nombre); pobl
 
 | Workflow | Vista |
 |---|---|
-| `optica-faq-bot` | ![Canvas del workflow principal](docs/canvas-faq-bot.png) |
-| `optica-cierre-inactividad` | ![Canvas del cierre por inactividad](docs/canvas-cierre-inactividad.png) |
-| `optica-sync-festivos` | ![Canvas de la sincronización de festivos](docs/canvas-sync-festivos.png) |
+| `optica-faq-bot` | ![Canvas del workflow principal](docs/optica-faq-bot.png) |
+| `optica-cierre-inactividad` | ![Canvas del cierre por inactividad](docs/optica-cierre-inactividad.png) |
+| `optica-sync-festivos` | ![Canvas de la sincronización de festivos](docs/optica-sync-festivos.png) |
 
 ## Qué hay (y qué no) en este repositorio
 
 Este repositorio es **documentación de arquitectura**, no un despliegue listo para ejecutar.
 
-**Incluye:** este README, el prompt del sistema en versión de ejemplo (`system_prompt_bot.example.md`), la configuración de infraestructura (`docker-compose.yml`, `Caddyfile`), las migraciones de base de datos y las capturas de los workflows.
+**Incluye:** este README, el prompt del sistema en versión de ejemplo (`docs/system_prompt_bot.example.md`), la configuración de infraestructura (`docker-compose.yml`, `Caddyfile`), las migraciones de base de datos y las capturas de los workflows.
 
 **No incluye —a propósito—:** los JSON de los workflows con la configuración real, credenciales, tokens, números de teléfono ni la base de conocimiento del cliente. Esos viven en un repositorio privado y en el servidor. El repositorio público **no es un respaldo**: los respaldos son snapshots de EBS y dumps de Postgres fuera de Git.
 

@@ -73,15 +73,15 @@ optica_festivos       -- Colombian public holidays (date PK, name); auto-populat
 
 | Workflow | View |
 |---|---|
-| `optica-faq-bot` | ![Main workflow canvas](docs/canvas-faq-bot.png) |
-| `optica-cierre-inactividad` | ![Inactivity close-out canvas](docs/canvas-cierre-inactividad.png) |
-| `optica-sync-festivos` | ![Holiday sync canvas](docs/canvas-sync-festivos.png) |
+| `optica-faq-bot` | ![Main workflow canvas](docs/optica-faq-bot.png) |
+| `optica-cierre-inactividad` | ![Inactivity close-out canvas](docs/optica-cierre-inactividad.png) |
+| `optica-sync-festivos` | ![Holiday sync canvas](docs/optica-sync-festivos.png) |
 
 ## What's (and isn't) in this repository
 
 This repository is **architecture documentation**, not a ready-to-run deployment.
 
-**It includes:** this README, an example version of the system prompt (`system_prompt_bot.example.md`), the infrastructure config (`docker-compose.yml`, `Caddyfile`), the database migrations and screenshots of the workflows.
+**It includes:** this README, an example version of the system prompt (`docs/system_prompt_bot.example.md`), the infrastructure config (`docker-compose.yml`, `Caddyfile`), the database migrations and screenshots of the workflows.
 
 **It deliberately does not include:** the workflow JSONs with real configuration, credentials, tokens, phone numbers or the client's knowledge base. Those live in a private repository and on the server. This public repo **is not a backup**: backups are EBS snapshots and Postgres dumps kept outside Git.
 
