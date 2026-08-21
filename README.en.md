@@ -6,7 +6,7 @@
 
 A **production** WhatsApp bot for a real optical shop in Colombia. It serves patients on the **company's official phone number** through **Coexistence** (the WhatsApp Business app and the Cloud API share the same number): the human team answers from the app during business hours, and **Owly** 🦉 —the AI assistant— takes over when the shop is closed.
 
-> A real project, with a real client, running 24/7 on the AWS free tier. This README documents the architecture, the design decisions and —above all— the **war log of real problems** found and fixed on the way to production.
+> A real project, with a real client, running 24/7 on a single ARM EC2 instance. This README documents the architecture, the design decisions and —above all— the **war log of real problems** found and fixed on the way to production.
 
 ---
 
@@ -31,7 +31,7 @@ Patient (WhatsApp) ⇄ Meta Cloud API
                      Dualhook (BSP · api.dualhook.com) ─→ Meta ─→ Patient
 ```
 
-- **Infrastructure:** AWS EC2 t3.micro · Docker Compose (Caddy + n8n + Postgres/pgvector) · Elastic IP · **own domain** with automatic TLS (migrated off sslip.io with no downtime — see the war log) · SSM Session Manager access (no SSH).
+- **Infrastructure:** AWS EC2 **t4g.small (ARM/Graviton, 2 GiB)** · Ubuntu arm64 · Docker Compose (Caddy + n8n + Postgres/pgvector) · 30 GB gp3 volume · **own domain** with automatic TLS (migrated off sslip.io with no downtime — see the war log) · SSM Session Manager access (no SSH). The project started on a t3.micro; the move to ARM is in Phase 5.
 - **Coexistence:** [Dualhook](https://dualhook.com) (Meta Tech Partner) enables Embedded Signup and **Webhook Override**: inbound messages go **straight from Meta to n8n** (Dualhook never stores message content); outbound goes through Dualhook's API with a connection-scoped key.
 - **Free inbound:** the bot only replies inside Meta's 24-hour customer service window (patient-initiated conversations) → messaging cost ≈ $0 at this volume.
 
@@ -172,6 +172,10 @@ The phase where we stopped fixing what broke and started hunting for what was br
 | A 25-minute outage was caught only because someone happened to be looking at the screen | n8n doesn't notify anyone when a workflow fails | A central **Error Workflow** → Telegram with the workflow, the failing node, the message, the time in Bogotá and a direct link to the execution |
 | The Error Workflow "didn't work": testing it produced nothing | Manual executions (`Execute step`, `Test workflow`) **do not trigger it**. Only a real execution through the workflow's own trigger, while *Published* | Test it with a throwaway one-node workflow (`Code` with `throw new Error(...)`) fired from its **production URL**, not from the editor |
 | Moving the machine while the hostname lived on `sslip.io` was a gamble | Let's Encrypt can't validate the new hostname until the IP already points there, and the limit of 5 certificates per hostname per 168 h can leave the bot down for a week | Move to an **own domain before you need it**: an A record (in *DNS only* — the proxy breaks the HTTP-01 challenge) + an extra block in the `Caddyfile` → both domains serve at once and the cutover happens once real traffic has confirmed it |
+| The t3.micro ran out of headroom with **a single client** | 605 MB of RAM used out of 909 MB available plus 542 MB in swap: the working set was around 1.15 GB against 1 GiB of physical memory | Migrate to **t4g.small (ARM/Graviton, 2 GiB)**. The quicker `stop → change type → start` onto a t3.small was rejected on purpose — see the next row 👇 |
+| Backups had been running for months and **not one had ever been restored** | Three artifacts landed in S3 every night. Nobody had ever rebuilt anything from them: an unverified backup is a hypothesis, not a safety net | The long path (new instance + full restore) was chosen precisely to **force that verification** while the only client is an in-house one. First restore ever proven in the project's history |
+| 🔴 Three broken IAM permissions, all found on the same day | All three the same pattern: configured **reactively**, only for the use case that existed at the time. The SSM policy pinned by ARN to the old instance; the S3 role with write access but no `s3:GetObject`; the SSM policy missing the `AWS-StartPortForwardingSession` document | None of them was a security hole — least privilege was doing exactly its job — but each was an **availability risk that stayed invisible until it mattered**. They only surface when you exercise new paths |
+| The TLS certificate could have left the bot down for a week mid-migration | Let's Encrypt + a hostname tied to the IP (see two rows above) | Avoided **at the root**: the own domain had been migrated the day before. Phase 0 existed precisely so that this step would be boring |
 | Owly reported a time roughly 2 hours off | Undiagnosed. The date and the holiday in the same message were correct, so it looks confined to the clock | **Open.** The `AI Agent` node is the only one that hasn't been through the audit the Postgres nodes got |
 
 ---
@@ -188,6 +192,8 @@ The phase where we stopped fixing what broke and started hunting for what was br
 8. **What doesn't page you doesn't exist.** A system with no failure alerts isn't stable — it's a system where nobody finds out. The highest-value automation built in August is invisible to every patient: two nodes that send a Telegram message when something breaks.
 9. **A reactive fix is not an audit.** Fixing the node that failed leaves untouched every node that will fail the same way. When a bug pattern shows up, go looking for it across the whole system, not just where it hurt.
 10. **An `UPDATE` that affects zero rows is not an error.** Loud failures fix themselves because someone sees them. The expensive ones return success: for weeks the anti-collision guard "worked" and did nothing at all.
+11. **An unverified backup is a hypothesis.** The move to ARM took the long road — a new instance and a full restore instead of a five-minute `change type` — specifically to prove for the first time that the backups were good. Choosing the hard exercise while the client is an in-house one is worth more than the time the shortcut saves.
+12. **Reactively granted permissions expire silently.** The three broken IAM policies found in August had been "working" for months: nobody had exercised a new instance, an S3 download or a port-forwarding session. Least privilege is right, but every permission scoped to one specific resource is a hidden dependency you only discover on the day you need it.
 
 ## Roadmap
 
@@ -196,6 +202,8 @@ The phase where we stopped fixing what broke and started hunting for what was br
 - [x] **Own domain with automatic TLS**, migrated off `sslip.io` with no downtime.
 - [x] **Error Workflow** with Telegram alerts covering all three production workflows.
 - [x] Documentation sticky notes on the canvas of all four workflows.
+- [x] **Migration to t4g.small (ARM)** with a verified full restore; the previous instance stays powered off as the rollback plan.
+- [ ] Evaluate a swap file on the new instance (the old one had 2 GB; the new one started with none).
 - [ ] Move the `optica-cierre-inactividad` logic into a **Postgres function**: today the query survives on the "no `<`" convention, and a fragile convention is debt, not design.
 - [ ] Reconcile the two handoff windows (2 h from an agent echo vs. 24 h from the model's `##HANDOFF##`).
 - [ ] Audit the `AI Agent` node (clock drift found, see Phase 5).

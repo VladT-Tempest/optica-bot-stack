@@ -6,7 +6,7 @@
 
 Bot de WhatsApp en **producción** para una óptica real en Colombia. Atiende pacientes por el **número oficial del negocio** mediante **coexistencia** (la app de WhatsApp Business y la Cloud API conviven en el mismo número): el equipo humano atiende en horario laboral desde la app, y **Owly** 🦉 —el asistente virtual con IA— atiende cuando la óptica está cerrada.
 
-> Proyecto real, con cliente real, corriendo 24/7 sobre AWS free tier. Este README documenta la arquitectura, las decisiones de diseño y —sobre todo— la **bitácora de problemas reales** encontrados y resueltos en el camino a producción.
+> Proyecto real, con cliente real, corriendo 24/7 sobre una sola instancia EC2 ARM. Este README documenta la arquitectura, las decisiones de diseño y —sobre todo— la **bitácora de problemas reales** encontrados y resueltos en el camino a producción.
 
 ---
 
@@ -31,7 +31,7 @@ Paciente (WhatsApp) ⇄ Meta Cloud API
                      Dualhook (BSP · api.dualhook.com) ─→ Meta ─→ Paciente
 ```
 
-- **Infraestructura:** AWS EC2 t3.micro · Docker Compose (Caddy + n8n + Postgres/pgvector) · Elastic IP · **dominio propio** con TLS automático (migrado desde sslip.io sin downtime, ver bitácora) · acceso por SSM Session Manager (sin SSH).
+- **Infraestructura:** AWS EC2 **t4g.small (ARM/Graviton, 2 GiB)** · Ubuntu arm64 · Docker Compose (Caddy + n8n + Postgres/pgvector) · volumen gp3 de 30 GB · **dominio propio** con TLS automático (migrado desde sslip.io sin downtime, ver bitácora) · acceso por SSM Session Manager (sin SSH). El proyecto arrancó en una t3.micro; la migración a ARM está en la Fase 5.
 - **Coexistencia:** [Dualhook](https://dualhook.com) (Meta Tech Partner) habilita el Embedded Signup y el **Webhook Override**: los mensajes entrantes van **directo de Meta a n8n** (Dualhook no almacena mensajes); el envío sale por la API de Dualhook con una key propia.
 - **Recepción gratuita:** el bot solo responde dentro de la ventana de servicio de 24 h de Meta (conversaciones iniciadas por el paciente) → costo de mensajería ≈ $0 a este volumen.
 
@@ -172,6 +172,10 @@ La fase en la que dejamos de arreglar lo que fallaba y empezamos a buscar lo que
 | Una caída de 25 min se detectó porque alguien estaba mirando la pantalla en ese momento | n8n no avisa por defecto cuando un workflow falla | **Error Workflow** central → Telegram con el workflow, el nodo que falló, el mensaje, la hora en Bogotá y el enlace directo a la ejecución |
 | El Error Workflow "no servía": se probaba y no llegaba nada | Las ejecuciones manuales (`Execute step`, `Test workflow`) **no lo disparan**. Solo una ejecución real vía el disparador propio del workflow, estando *Published* | Probarlo con un workflow desechable de un nodo (`Code` con `throw new Error(...)`) disparado desde su **URL de producción**, no desde el editor |
 | Migrar de máquina con el hostname en `sslip.io` era una ruleta | Let's Encrypt no puede validar el hostname nuevo hasta que la IP ya apunte ahí, y el límite de 5 certificados por hostname cada 168 h puede dejar el bot caído una semana | Mover a **dominio propio antes de necesitarlo**: registro A (en *DNS only*, el proxy rompe el reto HTTP-01) + bloque adicional en el `Caddyfile` → los dos dominios sirven a la vez y el cutover ocurre cuando el tráfico real ya lo confirmó |
+| La t3.micro se quedó corta con **un solo cliente** | 605 MB de RAM usados sobre 909 MB disponibles y 542 MB en swap: el conjunto de trabajo rondaba 1,15 GB contra 1 GiB físico | Migrar a **t4g.small (ARM/Graviton, 2 GiB)**. Se descartó a propósito el `stop → change type → start` a una t3.small, que habría costado 5 minutos en vez de una tarde — ver la fila siguiente 👇 |
+| Los backups corrían desde hacía meses y **nunca se había restaurado ninguno** | Se veían tres artefactos en S3 cada noche. Nadie había reconstruido nada a partir de ellos: un backup no verificado es una hipótesis, no un respaldo | Se eligió el camino largo (instancia nueva + restauración completa) precisamente para **forzar esa verificación** mientras el único cliente es de la casa. Primera restauración comprobada en la historia del proyecto |
+| 🔴 Tres permisos IAM rotos, descubiertos el mismo día | Los tres del mismo patrón: configurados de forma **reactiva**, solo para el caso de uso que existía en ese momento. La política de SSM atada por ARN a la instancia vieja; el role de S3 con permiso de escritura pero sin `s3:GetObject`; la política de SSM sin el documento `AWS-StartPortForwardingSession` | Ninguno era un agujero de seguridad —el mínimo privilegio hacía exactamente su trabajo— pero sí un **riesgo de disponibilidad invisible hasta que hizo falta**. Solo aparecen al ejercitar rutas nuevas |
+| El certificado TLS podía dejar el bot caído una semana en mitad de la migración | Let's Encrypt + hostname atado a la IP (ver dos filas arriba) | Evitado **de raíz**: el dominio propio ya se había migrado el día anterior. La Fase 0 existía precisamente para que este paso resultara aburrido |
 | Owly respondió una hora con ~2 h de desfase | Sin diagnosticar. La fecha y el festivo del mismo mensaje salieron correctos, así que parece acotado a la hora | **Abierto.** El nodo `AI Agent` es el único que no ha pasado por la auditoría que sí se hizo a los nodos Postgres |
 
 ---
@@ -188,6 +192,8 @@ La fase en la que dejamos de arreglar lo que fallaba y empezamos a buscar lo que
 8. **Lo que no avisa, no existe.** Un sistema sin alertas de fallo no es estable: es un sistema donde nadie se entera. La automatización que más valor dio en agosto no la ve ningún paciente — son dos nodos que mandan un mensaje de Telegram cuando algo revienta.
 9. **Un fix reactivo no es una auditoría.** Corregir el nodo que falló deja intactos los que van a fallar igual. Cuando aparece un patrón de bug, toca buscarlo en todo el sistema, no solo donde dolió.
 10. **Un `UPDATE` que afecta cero filas no es un error.** Los fallos ruidosos se arreglan solos porque alguien los ve. Los caros son los que devuelven éxito: durante semanas el anti-cruce "funcionaba" y no hacía nada.
+11. **Un backup no verificado es una hipótesis.** La migración a ARM se hizo por el camino largo —instancia nueva y restauración completa— en vez del `change type` de cinco minutos, justamente para comprobar por primera vez que los backups servían. Elegir el ejercicio difícil mientras el cliente es de la casa vale más que el tiempo que ahorra el atajo.
+12. **Los permisos configurados de forma reactiva caducan en silencio.** Las tres políticas IAM rotas de agosto llevaban meses "funcionando": nadie había ejercitado una instancia nueva, una descarga de S3 ni un port-forwarding. El mínimo privilegio es correcto, pero cada permiso concedido a un recurso concreto es una dependencia oculta que solo se descubre el día que hace falta.
 
 ## Roadmap
 
@@ -196,6 +202,8 @@ La fase en la que dejamos de arreglar lo que fallaba y empezamos a buscar lo que
 - [x] **Dominio propio con TLS automático**, migrado desde `sslip.io` sin downtime.
 - [x] **Error Workflow** con alertas por Telegram sobre los tres workflows productivos.
 - [x] Sticky notes de documentación en el lienzo de los cuatro workflows.
+- [x] **Migración a t4g.small (ARM)** con restauración completa verificada; la instancia anterior queda apagada como plan de retorno.
+- [ ] Evaluar un swap file en la instancia nueva (la vieja tenía 2 GB; la nueva arrancó sin ninguno).
 - [ ] Migrar la lógica de `optica-cierre-inactividad` a una **función de Postgres**: hoy la query sobrevive gracias a la convención "cero `<`", y una convención frágil es deuda, no diseño.
 - [ ] Unificar las dos ventanas de handoff (2 h por echo del asesor vs. 24 h por `##HANDOFF##` del modelo).
 - [ ] Auditar el nodo `AI Agent` (desfase horario detectado, ver Fase 5).
