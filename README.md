@@ -16,21 +16,22 @@ Bot de WhatsApp en **producción** para una óptica real en Colombia. Atiende pa
 Paciente (WhatsApp) ⇄ Meta Cloud API
                           │  webhooks (directo, Webhook Override)
                           ▼
-      Caddy (HTTPS, sslip.io) ─→ n8n (workflow "optica-faq-bot")
+      Caddy (HTTPS, dominio propio) ─→ n8n (4 workflows)
                                       │
               ┌───────────────────────┼──────────────────────────┐
               ▼                       ▼                          ▼
       Postgres (pgvector)      Claude Haiku 4.5           Telegram Bot API
-      · memoria de chat        (Anthropic API)            (alertas al equipo)
-      · sesiones/estado        cerebro conversacional
-      · lista de personal
+      · memoria de chat        (Anthropic API)            · handoff a humano
+      · sesiones/estado        cerebro conversacional     · paciente sin atender
+      · lista de personal                                 · fallos de workflow
+      · festivos oficiales
                           envío de respuestas
                                       │
                                       ▼
                      Dualhook (BSP · api.dualhook.com) ─→ Meta ─→ Paciente
 ```
 
-- **Infraestructura:** AWS EC2 t3.micro · Docker Compose (Caddy + n8n + Postgres/pgvector) · Elastic IP · dominio sslip.io · acceso por SSM Session Manager (sin SSH).
+- **Infraestructura:** AWS EC2 t3.micro · Docker Compose (Caddy + n8n + Postgres/pgvector) · Elastic IP · **dominio propio** con TLS automático (migrado desde sslip.io sin downtime, ver bitácora) · acceso por SSM Session Manager (sin SSH).
 - **Coexistencia:** [Dualhook](https://dualhook.com) (Meta Tech Partner) habilita el Embedded Signup y el **Webhook Override**: los mensajes entrantes van **directo de Meta a n8n** (Dualhook no almacena mensajes); el envío sale por la API de Dualhook con una key propia.
 - **Recepción gratuita:** el bot solo responde dentro de la ventana de servicio de 24 h de Meta (conversaciones iniciadas por el paciente) → costo de mensajería ≈ $0 a este volumen.
 
@@ -47,8 +48,9 @@ Paciente (WhatsApp) ⇄ Meta Cloud API
 | **Handoff a humano** | Escala por: multimedia (fórmulas, comprobantes), petición explícita de asesor, o consultas de estado que solo el equipo conoce (marcador `##HANDOFF##` emitido por el LLM y detectado en n8n). Alerta por **Telegram** y pausa el bot 24 h **por paciente**. |
 | **Anti-cruce (echo-pausa)** | Si un humano responde desde la app, el webhook echo pausa al bot 2 h para ese paciente. Bot y asesor nunca se pisan. |
 | **Gate de horario** | El bot solo conversa **fuera del horario de atención**; en horario, el equipo atiende desde la app (alertas de Telegram activas siempre). |
-| **Festivos automáticos** | Los 18 festivos colombianos se sincronizan solos desde la API pública **Nager.Date** (incluye traslados por Ley Emiliani). Un festivo cuenta como día cerrado: el bot **sí atiende** (el equipo no está) y **nunca agenda** citas en esa fecha. Cero mantenimiento manual. |
-| **Cierre por inactividad** | Workflow programado: a la hora sin respuesta envía despedida elegante y cierra la sesión (respetando la ventana de 24 h de Meta). |
+| **Festivos automáticos** | Los 18 festivos colombianos se sincronizan solos desde la API pública **Nager.Date**, con los traslados de la Ley Emiliani ya aplicados (verificado en producción: la Asunción de 2026 llegó como lunes 17 de agosto, no como sábado 15). Un festivo cuenta como día cerrado: el bot **sí atiende** (el equipo no está) y **nunca agenda** citas en esa fecha. Cero mantenimiento manual. |
+| **De quién es el turno** | Cada 15 min, un workflow mira `last_seen` vs. `last_outbound_at` y decide: si la pelota es **nuestra** y lleva 30 min parada, alerta al equipo por Telegram; si la pelota es **del paciente** y lleva 6 h, envía la despedida y cierra la sesión. Una sola consulta decide ambos caminos. |
+| **Alertas de fallo** | Un *Error Workflow* central recoge cualquier excepción de los tres workflows productivos y la manda por Telegram con el nodo que falló, el mensaje y el enlace directo a la ejecución. Antes, un cron roto se descubría por casualidad. |
 | **Personal interno** | Números del equipo en tabla `optica_staff` (Postgres, **fuera del repo** por privacidad) → el bot los ignora por completo. |
 | **Formato WhatsApp** | Regla de estilo + saneo programático `**`→`*` para que la negrita renderice bien en WhatsApp. |
 
@@ -56,7 +58,8 @@ Paciente (WhatsApp) ⇄ Meta Cloud API
 
 ```sql
 optica_chat_history   -- memoria conversacional (Postgres Chat Memory de n8n), indexada por session key rotativa "wa_id:N"
-optica_sessions       -- estado por paciente: first_seen, last_seen, visit_count, current_session, mode (bot|human), handoff_until, farewell_at
+optica_sessions       -- estado por paciente: first_seen, last_seen, last_outbound_at, visit_count, current_session,
+                      --   mode (bot|human), handoff_until, alerted_at, farewell_at, wa_user_id (BSUID de Meta)
 optica_staff          -- números internos que el bot ignora (privacidad: viven en BD, no en el workflow ni el repo)
 optica_festivos       -- festivos oficiales de Colombia (fecha PK, nombre); poblada automáticamente desde Nager.Date
 ```
@@ -66,8 +69,11 @@ optica_festivos       -- festivos oficiales de Colombia (fecha PK, nombre); pobl
 ## Workflows n8n
 
 1. **`optica-faq-bot`** (principal): Webhook (GET verificación + POST mensajes) → filtro (mensaje real + no-echo + no-staff) → `SessionCheck` (upsert de sesión + detección new/returning/continuing + `human_active`) → gate modo-humano → gate texto/no-texto → gate de horario → **AI Agent** (Claude Haiku 4.5 + Postgres Chat Memory) → detección `##HANDOFF##` → envío vía Dualhook. Ramas paralelas: escalamiento multimedia y echo-pausa.
-2. **`optica-cierre-inactividad`**: Schedule cada 15 min → despedida a sesiones de bot inactivas ≥ 1 h (una sola vez, dentro de la ventana de 24 h).
+2. **`optica-cierre-inactividad`**: Schedule cada 15 min → una consulta que clasifica cada sesión en `alertar` o `cerrar` → `Switch` → Telegram (paciente sin atender hace 30 min) o despedida vía Dualhook (paciente sin responder hace 6 h). Los dos umbrales miden cosas distintas a propósito; ver la Fase 5 de la bitácora.
 3. **`optica-sync-festivos`**: Schedule mensual → Code (año actual + siguiente) → HTTP Request a `date.nager.at` → upsert idempotente en `optica_festivos`. Mensual y no anual a propósito: si una corrida falla, se recupera sola al mes siguiente.
+4. **`optica-error-handler`**: `Error Trigger` → Telegram. No tiene disparador propio: n8n lo invoca cuando cualquiera de los tres workflows anteriores lanza una excepción (Settings → Error Workflow). Es la única razón por la que un fallo nocturno se entera alguien.
+
+Los cuatro llevan **sticky notes en el propio lienzo** con la lógica de cada rama y las trampas conocidas: el manual de operación no siempre está a mano cuando algo se rompe a las 2 a. m.
 
 ### Capturas del canvas
 
@@ -76,6 +82,7 @@ optica_festivos       -- festivos oficiales de Colombia (fecha PK, nombre); pobl
 | `optica-faq-bot` | ![Canvas del workflow principal](docs/optica-faq-bot.png) |
 | `optica-cierre-inactividad` | ![Canvas del cierre por inactividad](docs/optica-cierre-inactividad.png) |
 | `optica-sync-festivos` | ![Canvas de la sincronización de festivos](docs/optica-sync-festivos.png) |
+| `optica-error-handler` | ![Canvas del manejador de errores](docs/optica-error-handler.png) |
 
 ## Qué hay (y qué no) en este repositorio
 
@@ -143,12 +150,29 @@ Documentar lo que salió mal vale más que lo que salió bien. Todo esto pasó d
 | Bot y asesor se cruzaban en una misma conversación | Ambos activos a la vez | **Gate de horario** (bot solo con la óptica cerrada) + **echo-pausa** de 2 h por paciente |
 | Negrita con asteriscos visibles (`*texto*`) | El LLM emitía Markdown `**` que WhatsApp no renderiza | Regla de formato WhatsApp en el prompt + saneo `replace(/\*\*/g,'*')` en el envío |
 | El bot le respondía al propio personal de la óptica | Sus números personales no se distinguían de los de un paciente | Tabla **`optica_staff`** en Postgres (números fuera del repo) + gate al inicio del flujo |
-| Conversaciones quedaban "abiertas" para siempre | Sin política de cierre | Workflow de **despedida a la hora de inactividad** (una vez, `farewell_at`) |
+| Conversaciones quedaban "abiertas" para siempre | Sin política de cierre | Workflow de **despedida a la hora de inactividad** (una vez, `farewell_at`). *Rediseñado en la Fase 5: una hora sin distinguir de quién era el turno resultó ser el problema siguiente* |
 | Riesgo de exponer números personales en el repo | Condiciones hardcodeadas en el workflow | Mover la lista a la BD; checklist de saneo del JSON antes de publicar |
 | **Festivos: el peor escenario silencioso** | El gate de horario solo miraba día y hora → un festivo se trataba como día laboral: el bot callaba **y** el equipo no estaba → paciente sin respuesta de nadie | Tabla `optica_festivos` + `es_festivo` en `SessionCheck` + `&& !es_festivo` en ambos gates |
 | Owly no avisaba del festivo aunque el gate ya funcionaba | Se le pasaba una *lista* de fechas y se esperaba que él dedujera si hoy estaba incluida (aritmética de fechas = frágil). Además, el festivo de prueba se llamaba "PRUEBA — borrar" y el modelo lo descartó como artefacto | Inyectar un **indicador explícito** `¿HOY ES FESTIVO?: SÍ/No` desde el booleano de la BD + instrucción de confiar en él aunque el nombre parezca de prueba |
 | Mantenimiento anual de festivos (fácil de olvidar) | Lista manual año a año | Workflow de sync con **Nager.Date** (API pública, sin auth) → se auto-alimenta para siempre |
 | Sospecha de bug al ver el flujo morir en "Bot en silencio" | Los gates están en serie: el primero que aplica corta el flujo (una pausa por-paciente gana antes de evaluar el horario) | No es bug: es defensa en profundidad. El `human_active` visible en el output de `SessionCheck` explica cada camino |
+
+### Fase 5 — Auditoría y observabilidad (agosto 2026)
+
+La fase en la que dejamos de arreglar lo que fallaba y empezamos a buscar lo que fallaba **en silencio**.
+
+| Problema | Causa raíz | Solución |
+|---|---|---|
+| **El anti-cruce nunca funcionó en producción.** Cada vez que un asesor respondía desde la app, Owly seguía contestando en paralelo | Meta está migrando a **Business-Scoped User IDs**: el payload del echo trae `to_user_id` y el teléfono (`to`) puede no venir. El `UPDATE` emparejaba solo por teléfono → afectaba **0 filas, sin lanzar error** | Columna `wa_user_id` + emparejar por BSUID con el teléfono como respaldo: `WHERE wa_user_id = $1 OR ($2 != '' AND wa_id = $2)`. Confirmado después con 6 ejecuciones reales (1 fila afectada en todas) |
+| Tres nodos más tenían la misma exposición y nadie lo sabía | El patrón se había corregido **dos veces de forma reactiva**: solo el nodo que reventó cada vez | Exportar todos los workflows (`n8n export:workflow --all`) y revisar con `jq` **todos** los nodos Postgres, no solo los sospechosos. Aparecieron 3 más sin tocar |
+| 🔴 **Una query se ejecutaba distinta de como se veía en el editor** | Algo entre el editor de n8n y la ejecución aplica un limpiador de etiquetas HTML (un `<[^>]*>` de manual) y **borra todo lo que haya entre un `<` y el siguiente `>`**. El editor sigue mostrando el texto íntegro | Reescribir las queries **sin ningún `<`** (`a < b` ≡ `b > a`). En SQL eso obliga además a usar `!=` en vez del `<>` natural, que empieza por `<` y se lo comería entero |
+| "Voltear todos los `<`" casi borra medio `SessionCheck` | El limpiador necesita un **par**: un `<` de apertura y un `>` de cierre. Una query con `<` y sin ningún `>` posterior es inofensiva — y añadir un `>=` "por seguridad" le da justo el cierre que le faltaba | La regla no es *voltea los `<`*, es **que no exista un par `<…>`**. Contar `<` y `>` en orden de aparición antes de tocar un nodo. *Una mitigación aplicada sin entender el mecanismo puede activar justo lo que pretendía evitar* |
+| Una expresión editada quedó corrupta sin lanzar ningún error | Pegar `={{ ... }}` en un campo que la UI ya tiene en modo *Expression* deja ese `=` como carácter literal, y n8n añade el suyo al guardar → el JSON exportado dice `"=={{ ... }}"` | Re-exportar y comparar el JSON contra un nodo de referencia después de cada edición. *"Se ve bien en el editor" no es una verificación* |
+| El cierre por inactividad despedía a pacientes que estaban esperando respuesta | El umbral de 1 h medía "no pasó nada", sin distinguir **de quién era el turno** | Rediseño de dos caminos sobre una sola consulta: `alertar` a los 30 min si la pelota es nuestra, `cerrar` a las 6 h si es del paciente |
+| Una caída de 25 min se detectó porque alguien estaba mirando la pantalla en ese momento | n8n no avisa por defecto cuando un workflow falla | **Error Workflow** central → Telegram con el workflow, el nodo que falló, el mensaje, la hora en Bogotá y el enlace directo a la ejecución |
+| El Error Workflow "no servía": se probaba y no llegaba nada | Las ejecuciones manuales (`Execute step`, `Test workflow`) **no lo disparan**. Solo una ejecución real vía el disparador propio del workflow, estando *Published* | Probarlo con un workflow desechable de un nodo (`Code` con `throw new Error(...)`) disparado desde su **URL de producción**, no desde el editor |
+| Migrar de máquina con el hostname en `sslip.io` era una ruleta | Let's Encrypt no puede validar el hostname nuevo hasta que la IP ya apunte ahí, y el límite de 5 certificados por hostname cada 168 h puede dejar el bot caído una semana | Mover a **dominio propio antes de necesitarlo**: registro A (en *DNS only*, el proxy rompe el reto HTTP-01) + bloque adicional en el `Caddyfile` → los dos dominios sirven a la vez y el cutover ocurre cuando el tráfico real ya lo confirmó |
+| Owly respondió una hora con ~2 h de desfase | Sin diagnosticar. La fecha y el festivo del mismo mensaje salieron correctos, así que parece acotado a la hora | **Abierto.** El nodo `AI Agent` es el único que no ha pasado por la auditoría que sí se hizo a los nodos Postgres |
 
 ---
 
@@ -161,11 +185,20 @@ Documentar lo que salió mal vale más que lo que salió bien. Todo esto pasó d
 5. **Los humanos son parte de la arquitectura.** Gate de horario, echo-pausa, staff-list y handoff convierten un chatbot en un **sistema híbrido humano+IA** operable en un negocio real.
 6. **Decide en el código, no en el prompt.** Cuando el sistema ya sabe algo con certeza (¿hoy es festivo? ¿está en horario?), pásale al LLM un **booleano explícito**, no datos para que los deduzca. Cada cálculo que se le delega al modelo es un bug latente.
 7. **Los calendarios locales son requisitos, no detalles.** Festivos, cierres de mediodía y zonas horarias son reglas de negocio de primera clase: si el bot no las conoce, falla justo los días en que más se nota.
+8. **Lo que no avisa, no existe.** Un sistema sin alertas de fallo no es estable: es un sistema donde nadie se entera. La automatización que más valor dio en agosto no la ve ningún paciente — son dos nodos que mandan un mensaje de Telegram cuando algo revienta.
+9. **Un fix reactivo no es una auditoría.** Corregir el nodo que falló deja intactos los que van a fallar igual. Cuando aparece un patrón de bug, toca buscarlo en todo el sistema, no solo donde dolió.
+10. **Un `UPDATE` que afecta cero filas no es un error.** Los fallos ruidosos se arreglan solos porque alguien los ve. Los caros son los que devuelven éxito: durante semanas el anti-cruce "funcionaba" y no hacía nada.
 
 ## Roadmap
 
 - [x] Método de pago configurado en la WABA (habilita plantillas cuando se necesiten).
 - [x] README bilingüe (ES/EN) para alcance internacional del portafolio.
+- [x] **Dominio propio con TLS automático**, migrado desde `sslip.io` sin downtime.
+- [x] **Error Workflow** con alertas por Telegram sobre los tres workflows productivos.
+- [x] Sticky notes de documentación en el lienzo de los cuatro workflows.
+- [ ] Migrar la lógica de `optica-cierre-inactividad` a una **función de Postgres**: hoy la query sobrevive gracias a la convención "cero `<`", y una convención frágil es deuda, no diseño.
+- [ ] Unificar las dos ventanas de handoff (2 h por echo del asesor vs. 24 h por `##HANDOFF##` del modelo).
+- [ ] Auditar el nodo `AI Agent` (desfase horario detectado, ver Fase 5).
 - [ ] Recuperar el permiso `whatsapp_business_management` en el token (requiere re-correr el Embedded Signup; **aplazado a propósito**: no aporta al alcance actual y el número está en producción).
 - [ ] Evaluar **Meta Business Agent** cuando llegue a Colombia (posible reemplazo del BSP).
 - [ ] HTTPS para el dominio principal de la óptica (Cloudflare).
