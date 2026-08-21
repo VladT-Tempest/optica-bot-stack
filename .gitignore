@@ -32,3 +32,6 @@ logs/
 # ───────── Node (por si exportas nodos custom) ─────────
 node_modules/
 *:Zone.Identifier
+
+# ───── Workflows exportados de n8n (contienen datos del cliente) ─────
+workflows/
