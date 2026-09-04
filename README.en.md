@@ -71,9 +71,10 @@ optica_festivos       -- Colombian public holidays (date PK, name); auto-populat
 1. **`optica-faq-bot`** (main): Webhook (GET verification + POST messages) → filter (real message + not an echo + not staff) → `SessionCheck` → human-mode gate → text/non-text gate → business-hours gate → **AI Agent** (Claude Haiku 4.5 + Postgres Chat Memory) → `##HANDOFF##` detection → send via Dualhook. Parallel branches: media escalation and echo pause.
 2. **`optica-cierre-inactividad`**: Schedule every 15 min → one query that classifies every session as `alertar` or `cerrar` → `Switch` → Telegram (patient unanswered for 30 min) or goodbye via Dualhook (patient silent for 6 h). The two thresholds measure deliberately different things; see Phase 5 of the war log.
 3. **`optica-sync-festivos`**: Monthly schedule → Code (current year + next) → HTTP Request to `date.nager.at` → idempotent upsert into `optica_festivos`. Monthly rather than yearly on purpose: if one run fails, it self-heals the following month.
-4. **`optica-error-handler`**: `Error Trigger` → Telegram. It has no trigger of its own: n8n invokes it whenever any of the three workflows above throws (Settings → Error Workflow). It is the only reason anyone finds out about an overnight failure.
+4. **`optica-error-handler`**: `Error Trigger` → Telegram. It has no trigger of its own: n8n invokes it whenever any of the other production workflows throws (Settings → Error Workflow). It is the only reason anyone finds out about an overnight failure.
+5. **`optica-backup-watchdog`**: Webhook (receives the nightly backup's heartbeat) → upsert into a heartbeat table. In parallel: daily Schedule → staleness query → `IF` → Telegram. It is a *dead man's switch*: it does not watch for something failing, it watches for something **still happening**. See Phase 6.
 
-All four carry **sticky notes on the canvas itself** documenting each branch and the known traps: the ops manual isn't always within reach when something breaks at 2 a.m.
+The first four carry **sticky notes on the canvas itself** documenting each branch and the known traps: the ops manual isn't always within reach when something breaks at 2 a.m.
 
 ### Canvas screenshots
 
@@ -90,7 +91,7 @@ This repository is **architecture documentation**, not a ready-to-run deployment
 
 **It includes:** this README, an example version of the system prompt (`docs/system_prompt_bot.example.md`), the infrastructure config (`docker-compose.yml`, `Caddyfile`), the database migrations and screenshots of the workflows.
 
-**It deliberately does not include:** the workflow JSONs with real configuration, credentials, tokens, phone numbers or the client's knowledge base. Those live in a private repository and on the server. This public repo **is not a backup**: backups are EBS snapshots and Postgres dumps kept outside Git.
+**It deliberately does not include:** the workflow JSONs with real configuration, credentials, tokens, phone numbers or the client's knowledge base. Those live in a private repository and on the server. This public repo **is not a backup**: backups are an EBS snapshot plus a nightly dump of Postgres, the data volumes and the stack config pushed to a private S3 bucket — all outside Git, and watched by the Phase 6 watchdog.
 
 ## Security and privacy
 
@@ -179,6 +180,19 @@ The phase where we stopped fixing what broke and started hunting for what was br
 | 🔴 The migration finished "clean" and left a time bomb behind | The cutover pointed the A record at the new instance's **auto-assigned IP**, leaving the Elastic IP stranded on the old, powered-off machine. Right for the *moment* of the cutover — the own domain existed precisely for that — but wrong as a *permanent state* | A `stop → change type → start` (the growth path to t4g.medium documented in the runbook itself) would have changed the IP and taken the bot down with no warning. The Elastic IP was reassociated to the production instance and DNS repointed: ~2 min of downtime, done at closing time with Meta retrying the webhooks |
 | Owly reported a time roughly 2 hours off | Undiagnosed. The date and the holiday in the same message were correct, so it looks confined to the clock | **Open.** The `AI Agent` node is the only one that hasn't been through the audit the Postgres nodes got |
 
+### Phase 6 — Continuity and recovery (September 2026)
+
+The phase where we found out that the backup Phase 5 was so proud of had not existed for seventeen days.
+
+| Problem | Root cause | Fix |
+|---|---|---|
+| 🔴 **The nightly backup had not run for 17 days and nobody had noticed** | The ARM migration restored the database, the volumes and the stack config — and **none of those three contained the backup itself**. The script lived in `/usr/local/bin/` and its schedule in root's crontab: both stayed on the old, powered-off machine. The new instance came up perfect and unprotected | Script recreated, plus a **reinstall kit stored inside the very directory the backup captures** (script + cron file + installer), so that restoring the backup also restores the ability to keep making them. One command on the next migration |
+| It did not fail: it **stopped existing** — which is exactly why nobody caught it | A process that fails leaves a trace: a log, an exit code, an alert. One that is no longer there leaves nothing. The Phase 5 Error Workflow does not cover it, because the backup lives outside n8n | **Dead man's switch:** the script emits a heartbeat to a webhook **only if every upload succeeded** (`set -e` aborts earlier otherwise), and a daily scheduled check pages via Telegram when the last heartbeat is older than 26 hours |
+| The lifecycle rule kept working **perfectly**, and that made things worse | The 30-day expiry was deleting one copy a day with no new ones coming in: the cleanup mechanism itself was emptying the bucket | Caught with 13 days to spare before there would have been no daily backup at all. *A correct policy applied on top of a broken flow accelerates the damage instead of containing it* |
+| The cron was installed… which does not mean it ran | Dropping a file into `/etc/cron.d/` and checking that the service is `active` proves neither that the file is read nor that it fires | A **canary** line scheduled for the following minute, verified, and the clean file restored afterwards. The discipline Phase 5 applied to backups, now applied to their scheduling |
+| 🔴 The new alert reached **half** its recipients | Building the workflow programmatically with the n8n SDK, chaining `.onTrue(nodeA).onTrue(nodeB)` **does not add two branches: the second call replaces the first**, and the first node vanishes without any error. The validator passed clean; the only signal was a node count of 6 instead of 7, and it was read as "it came out tidier" | Node and connection declared explicitly, then re-verified with a **real production run**, not a manual test. New rule: after generating a workflow from code, count the resulting nodes against the expected ones. *Same pattern as the `<…>` pair from Phase 5: code that passes validation and builds something other than what was written* |
+| Caddy's volume had never been part of the backup | The database, the stack and the n8n volume were captured. The directory holding the TLS certificate, its key and the ACME account was not on the list | Added to the script — and verified by downloading the `.tar.gz` from S3 and **listing its contents**, rather than trusting the upload's "OK". Without it, a full recovery leaves the bot with no certificate, asking Let's Encrypt for one under a limit of 5 per hostname every 168 h |
+
 ---
 
 ## Lessons learned (the big ones)
@@ -196,6 +210,9 @@ The phase where we stopped fixing what broke and started hunting for what was br
 11. **An unverified backup is a hypothesis.** The move to ARM took the long road — a new instance and a full restore instead of a five-minute `change type` — specifically to prove for the first time that the backups were good. Choosing the hard exercise while the client is an in-house one is worth more than the time the shortcut saves.
 12. **"Verified" is not the same as "stable".** The ARM migration passed all nine checks in its runbook, a real WhatsApp conversation included, and still left production hanging off an ephemeral IP. End-to-end tests certify the present; hidden dependencies collect the next time someone restarts something.
 13. **Reactively granted permissions expire silently.** The three broken IAM policies found in August had been "working" for months: nobody had exercised a new instance, an S3 download or a port-forwarding session. Least privilege is right, but every permission scoped to one specific resource is a hidden dependency you only discover on the day you need it.
+14. **A migration moves the data; the operational layer stays behind.** August's runbook restored the database, the volumes and the config, and the system came up perfect — and unprotected. The backup script lived in `/usr/local/bin` and its cron in root's crontab: none of that was inside what the backup itself captured. Taking inventory for a migration means counting the scripts, the crons, the systemd units and the permissions too, not just the data. It is lesson 13 wearing a different costume: whatever has never been exercised, you do not know is there.
+15. **A backup with no absence alert is not a backup, it is a belief.** Error-based monitoring cannot detect that something stopped existing: by construction there is no error to catch, only silence — and silence looks an awful lot like everything being fine. The logic has to be inverted with a *dead man's switch*: the job emits a signal **only if it finished cleanly**, and someone shouts when the signal fails to arrive.
+16. **Installing is not verifying, and the list of things to verify gets longer every time.** A freshly installed cron is checked with a canary line; a backup, by listing the archive it produced; an alert, by watching it arrive. September's three checks cost minutes and all three found something: the backup did not exist, the cron had never been seen to fire, and the alert reached half its recipients.
 
 ## Roadmap
 
@@ -205,6 +222,10 @@ The phase where we stopped fixing what broke and started hunting for what was br
 - [x] **Error Workflow** with Telegram alerts covering all three production workflows.
 - [x] Documentation sticky notes on the canvas of all four workflows.
 - [x] **Migration to t4g.small (ARM)** with a verified full restore; the previous instance stays powered off as the rollback plan.
+- [x] **Caddy's volumes included in the nightly backup**, verified by listing the archive downloaded back from S3.
+- [x] **Backup watchdog** with a Telegram absence alert, and a reinstall kit riding inside the backup itself.
+- [ ] **A watchdog external to the host:** the current one lives in the same n8n it watches, so it covers the failure that happened but not the loss of the whole instance.
+- [ ] A copy of the backups **outside AWS**: today the backup and the account holding it share a fate.
 - [ ] Evaluate a swap file on the new instance (the old one had 2 GB; the new one started with none).
 - [ ] Move the `optica-cierre-inactividad` logic into a **Postgres function**: today the query survives on the "no `<`" convention, and a fragile convention is debt, not design.
 - [ ] Reconcile the two handoff windows (2 h from an agent echo vs. 24 h from the model's `##HANDOFF##`).
