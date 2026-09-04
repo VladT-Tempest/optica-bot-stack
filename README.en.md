@@ -84,6 +84,7 @@ The first four carry **sticky notes on the canvas itself** documenting each bran
 | `optica-cierre-inactividad` | ![Inactivity close-out canvas](docs/optica-cierre-inactividad.png) |
 | `optica-sync-festivos` | ![Holiday sync canvas](docs/optica-sync-festivos.png) |
 | `optica-error-handler` | ![Error handler canvas](docs/optica-error-handler.png) |
+| `optica-backup-watchdog` | ![Backup watchdog canvas](docs/optica-backup-watchdog.png) |
 
 ## What's (and isn't) in this repository
 

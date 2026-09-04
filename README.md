@@ -84,6 +84,7 @@ Los cuatro primeros llevan **sticky notes en el propio lienzo** con la lógica d
 | `optica-cierre-inactividad` | ![Canvas del cierre por inactividad](docs/optica-cierre-inactividad.png) |
 | `optica-sync-festivos` | ![Canvas de la sincronización de festivos](docs/optica-sync-festivos.png) |
 | `optica-error-handler` | ![Canvas del manejador de errores](docs/optica-error-handler.png) |
+| `optica-backup-watchdog` | ![Canvas del watchdog de backup](docs/optica-backup-watchdog.png) |
 
 ## Qué hay (y qué no) en este repositorio
 
