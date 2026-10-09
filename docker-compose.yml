@@ -35,7 +35,9 @@ services:
 
   # ── n8n: el orquestador del bot ──
   n8n:
-    image: docker.n8n.io/n8nio/n8n:latest
+    # Versión fijada a propósito (antes `latest`): actualizar solo de forma deliberada,
+    # leyendo las notas de versión y con backup previo.
+    image: docker.n8n.io/n8nio/n8n:2.35.3
     restart: unless-stopped
     environment:
       # Conexión a Postgres
