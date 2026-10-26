@@ -1,0 +1,5 @@
+# Backup diario del stack de la optica -> S3
+# 07:00 UTC = 02:00 America/Bogota. Reinstalar con: sudo bash /home/ubuntu/optica-bot-stack/install-backup.sh
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+0 7 * * * root /usr/local/bin/backup-optica.sh >> /var/log/backup-optica.log 2>&1
