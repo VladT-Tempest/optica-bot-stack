@@ -9,6 +9,8 @@ services:
       - "443:443"   # tráfico HTTPS
     environment:
       - DOMAIN=${DOMAIN}
+      - N8N_EDITOR_USER=${N8N_EDITOR_USER}
+      - N8N_EDITOR_HASH=${N8N_EDITOR_HASH}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -60,9 +62,13 @@ services:
       # Task runners (recomendado/estándar en n8n moderno; evita el warning de deprecación)
       - N8N_RUNNERS_ENABLED=true
       - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
-      # Zona horaria (Colombia)
+      # Zona horaria (Yopal / Colombia)
       - GENERIC_TIMEZONE=America/Bogota
       - TZ=America/Bogota
+      # Data Clean
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=720
+      - EXECUTIONS_DATA_PRUNE_MAX_COUNT=5000
     volumes:
       - n8n_data:/home/node/.n8n
     depends_on:

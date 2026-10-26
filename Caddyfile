@@ -1,5 +1,30 @@
-# Caddy lee el dominio desde la variable de entorno DOMAIN.
+# Caddy lee el dominio principal desde la variable de entorno DOMAIN.
 # Provisiona y renueva el certificado TLS automáticamente (Let's Encrypt).
+
+# Bloque reutilizable (22/10/2026): webhooks y MCP quedan públicos;
+# todo lo demás (editor de n8n, /rest, assets) queda detrás de basic auth.
+# Usuario y hash vienen de .env (N8N_EDITOR_USER / N8N_EDITOR_HASH).
+(n8n_seguro) {
+	# /rest/push (WebSocket del editor, exige sesion de n8n), /healthz y telemetria: el navegador no les envia basic auth
+	@publico path /webhook/* /mcp-server/* /rest/push* /healthz /rest/telemetry/*
+	handle @publico {
+		reverse_proxy n8n:5678
+	}
+	handle {
+		basic_auth {
+			{$N8N_EDITOR_USER} {$N8N_EDITOR_HASH}
+		}
+		reverse_proxy n8n:5678
+	}
+}
+
 {$DOMAIN} {
-    reverse_proxy n8n:5678
+	import n8n_seguro
+}
+
+# Dominio legado (sslip.io) conservado a propósito como red de seguridad:
+# si algo falla con el dominio nuevo, revertir el webhook de Dualhook a esta URL
+# no requiere ningún cambio en el servidor. Misma protección que el principal.
+3.211.205.166.sslip.io {
+	import n8n_seguro
 }
