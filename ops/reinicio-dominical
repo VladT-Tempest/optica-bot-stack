@@ -1,0 +1,1 @@
+0 9 * * 0 root [ -f /var/run/reboot-required ] && /usr/bin/logger -t reinicio-dominical "reinicio por parches pendientes" && /usr/sbin/shutdown -r now
