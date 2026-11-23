@@ -6,7 +6,8 @@
 # Usuario y hash vienen de .env (N8N_EDITOR_USER / N8N_EDITOR_HASH).
 (n8n_seguro) {
 	# /rest/push (WebSocket del editor, exige sesion de n8n), /healthz y telemetria: el navegador no les envia basic auth
-	@publico path /webhook/* /mcp-server/* /rest/push* /healthz /rest/telemetry/*
+	# OAuth del MCP (20/11/2026): descubrimiento, registro, token y revocacion los llama la nube del cliente sin navegador. /mcp-oauth/authorize sigue con candado
+	@publico path /webhook/* /mcp-server/* /.well-known/oauth-authorization-server* /.well-known/oauth-protected-resource* /mcp-oauth/register /mcp-oauth/token /mcp-oauth/revoke /rest/push* /healthz /rest/telemetry/*
 	handle @publico {
 		reverse_proxy n8n:5678
 	}
