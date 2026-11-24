@@ -67,7 +67,7 @@ services:
       - TZ=America/Bogota
       # Data Clean
       - EXECUTIONS_DATA_PRUNE=true
-      - EXECUTIONS_DATA_MAX_AGE=720
+      - EXECUTIONS_DATA_MAX_AGE=168
       - EXECUTIONS_DATA_PRUNE_MAX_COUNT=5000
     volumes:
       - n8n_data:/home/node/.n8n
