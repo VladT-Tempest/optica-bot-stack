@@ -6,7 +6,7 @@
 > nombres de buckets ni IDs de cuenta (el repo es público).
 > El valor de cada secreto vive en el gestor de contraseñas, en la entrada indicada en la columna "Entrada en el gestor".
 
-Última revisión: 26/10/2026 · Leyenda: ✅ confirmado · ❓ por completar
+Última revisión: 24/11/2026 · Leyenda: ✅ confirmado · ❓ por completar
 
 ---
 
@@ -66,8 +66,8 @@ El archivo `.env` del stack concentra los secretos del servidor. Nunca va al rep
 |---|---|---|---|---|
 | Usuario del sistema `bot-optica` | Token de Owly (WhatsApp Cloud API) | Admin (se podría bajar a Employee) | Activos: app `optica-faq-bot`, WhatsApp account del número de la óptica | ✅ |
 | Usuario del sistema `bot-opticasocial` | Token de publicación en redes | Employee | Activos: página de Facebook, app `optica-social-publisher`, Instagram (Contenido y Estadísticas) | ✅ |
-| Messaging account "Mensajería Owly – Producción" | Lado Cloud API (Owly) | — | Sin método de pago (necesario para plantillas en Fase 3) | ✅ |
-| Messaging account "Óptica Dra Milena Hurtado" | Lado App de WhatsApp Business (celular) | — | Con método de pago | ✅ |
+| Messaging account "PRUEBAS – Owly (número de test +1 555)" | **Solo pruebas** (número de test de Meta), no recibe pacientes | — | Antes se llamaba "Mensajería Owly – Producción" por error; renombrada el 23/11/2026. Sin método de pago | ✅ |
+| Messaging account "Óptica Dra Milena Hurtado" | **La real de pacientes:** número de la óptica en coexistencia (app de WhatsApp Business en el celular + Cloud API para Owly) | — | Con método de pago. Hoy Dualhook es el único socio conectado; la tarea 67 del manual la pasa a Zernio | ✅ |
 | Administrador del portafolio | Gestión de Meta Business | ❓ cuentas personales con rol admin | Documentar quién es admin además de Vladt | ❓ |
 
 ## 4. Sitio web y presencia
@@ -82,6 +82,13 @@ El archivo `.env` del stack concentra los secretos del servidor. Nunca va al rep
 | Monitor externo del healthcheck | Vigila el healthcheck del bot | ❓ | ❓ | ❓ |
 | GitHub `optica-bot-stack` | Código del stack | GitHub | `XYBORG-INTERNO · GitHub · Cuenta` | ✅ |
 
+## 5. Proveedores de mensajería (WhatsApp)
+
+| Credencial | Para qué sirve | Dónde vive el secreto | Entrada en el gestor | Estado |
+|---|---|---|---|---|
+| Cuenta de Zernio | Plataforma de la API de WhatsApp que reemplazará a Dualhook (tarea 67). La cuenta es de XYborg; la óptica es un perfil dentro de ella | Panel de Zernio (login con el correo administrativo del dominio XYborg) | `XYBORG-INTERNO · Zernio · Cuenta de la plataforma de mensajería` | ✅ creada antes del 24/11/2026 |
+| API key de Zernio para Owly | Llamadas de n8n a Zernio (envío y conexión del número) | Se genera en el panel de Zernio; irá en una credencial de n8n | `OPTICA · Zernio · API key de Owly` | ❓ aún no generada |
+
 ---
 
 ## Pendientes de este inventario
@@ -90,4 +97,4 @@ El archivo `.env` del stack concentra los secretos del servidor. Nunca va al rep
 - [x] Respaldar `N8N_ENCRYPTION_KEY` fuera del servidor (22/10/2026)
 - [ ] Revisar si `bot-optica` puede bajar de Admin a Employee
 - [ ] Revisar permisos mínimos del usuario IAM de S3 de imágenes
-- [ ] Probar una restauración real desde el backup de S3
+- [x] Probar una restauración real desde el backup de S3 (23/11/2026: 10/10 credenciales descifradas)
