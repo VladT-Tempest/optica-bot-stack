@@ -6,7 +6,7 @@
 > nombres de buckets ni IDs de cuenta (el repo es público).
 > El valor de cada secreto vive en el gestor de contraseñas, en la entrada indicada en la columna "Entrada en el gestor".
 
-Última revisión: 24/11/2026 · Leyenda: ✅ confirmado · ❓ por completar
+Última revisión: 27/11/2026 (migración Dualhook → Zernio, tarea 67) · Leyenda: ✅ confirmado · ❓ por completar · ⛔ revocada / fuera de uso
 
 ---
 
@@ -52,7 +52,9 @@ El archivo `.env` del stack concentra los secretos del servidor. Nunca va al rep
 | WhatsApp account | WhatsApp API | Owly envía mensajes (Cloud API) | Token **permanente** del usuario del sistema `bot-optica` (Meta Business) | `OPTICA · Meta bot-optica · Token WhatsApp Owly` | ✅ |
 | WhatsApp OAuth account | WhatsApp Trigger | Trigger de WhatsApp | App `optica-faq-bot` (App ID / App Secret) | `OPTICA · Meta app optica-faq-bot · App secret` | ❓ confirmar si se usa |
 | Meta Graph API - bot-opticasocial | Facebook Graph API | Publicación automática en Facebook e Instagram | Token del usuario del sistema `bot-opticasocial` | `OPTICA · Meta bot-opticasocial · Token publicación` | ✅ |
-| DualHook Outbound | Header Auth | Salida hacia Dualhook | Panel de Dualhook | `OPTICA · Dualhook · Header outbound` | ❓ |
+| DualHook Outbound | Header Auth | Salida hacia Dualhook (bot viejo `optica-faq-bot` y despedida de `optica-cierre-inactividad`) | Llave `dh_live_` del panel de Dualhook | `OPTICA · Dualhook · Header outbound` | ⛔ **revocada el 26/11/2026** al desconectar Dualhook. La credencial queda en n8n solo como base de una reversa (exigiría una llave nueva). Borrarla después de cancelar el plan |
+| Zernio API (óptica) | Header Auth | **Producción:** los 3 nodos de envío de `optica-faq-bot-zernio` (Owly → pacientes) | API key `owly-n8n-optica` de Zernio, **restringida al perfil de la óptica y al permiso Messages** | `OPTICA · Zernio · API key Owly (perfil óptica)` | ✅ en uso desde el 26/11/2026 |
+| Zernio API | Header Auth | Llave amplia usada durante las pruebas en sandbox | API key `owly-n8n` de Zernio (toda la cuenta) | `OPTICA · Zernio · API key pruebas (amplia)` | ❓ **revocar el 03/12/2026** si la semana es estable; luego borrar la credencial de n8n |
 | Anthropic account | Anthropic API | Owly (Haiku) y generación de copy | Consola de Anthropic | `XYBORG-INTERNO · Anthropic · API key óptica` | ❓ |
 | Google Gemini - optica-imagenes | Gemini API | Generación de imágenes (Nano Banana) | Google AI Studio / Cloud | `OPTICA · Gemini · Imágenes` | ❓ |
 | AWS S3 - optica-social-media | AWS | Subir imágenes públicas para Instagram | ❓ access keys de un usuario IAM dedicado | `OPTICA · AWS S3 · Imágenes redes` | ❓ confirmar usuario IAM y permisos mínimos |
@@ -67,7 +69,7 @@ El archivo `.env` del stack concentra los secretos del servidor. Nunca va al rep
 | Usuario del sistema `bot-optica` | Token de Owly (WhatsApp Cloud API) | Admin (se podría bajar a Employee) | Activos: app `optica-faq-bot`, WhatsApp account del número de la óptica | ✅ |
 | Usuario del sistema `bot-opticasocial` | Token de publicación en redes | Employee | Activos: página de Facebook, app `optica-social-publisher`, Instagram (Contenido y Estadísticas) | ✅ |
 | Messaging account "PRUEBAS – Owly (número de test +1 555)" | **Solo pruebas** (número de test de Meta), no recibe pacientes | — | Antes se llamaba "Mensajería Owly – Producción" por error; renombrada el 23/11/2026. Sin método de pago | ✅ |
-| Messaging account "Óptica Dra Milena Hurtado" | **La real de pacientes:** número de la óptica en coexistencia (app de WhatsApp Business en el celular + Cloud API para Owly) | — | Con método de pago. Hoy Dualhook es el único socio conectado; la tarea 67 del manual la pasa a Zernio | ✅ |
+| Messaging account "Óptica Dra Milena Hurtado" | **La real de pacientes:** número de la óptica en coexistencia (app de WhatsApp Business en el celular + Cloud API para Owly) | — | Con método de pago. **Desde el 26/11/2026 conectada a Zernio** (Embedded Signup con coexistencia, sin compartir historial). Dualhook ya no es socio del portafolio | ✅ |
 | Administrador del portafolio | Gestión de Meta Business | ❓ cuentas personales con rol admin | Documentar quién es admin además de Vladt | ❓ |
 
 ## 4. Sitio web y presencia
@@ -86,8 +88,11 @@ El archivo `.env` del stack concentra los secretos del servidor. Nunca va al rep
 
 | Credencial | Para qué sirve | Dónde vive el secreto | Entrada en el gestor | Estado |
 |---|---|---|---|---|
-| Cuenta de Zernio | Plataforma de la API de WhatsApp que reemplazará a Dualhook (tarea 67). La cuenta es de XYborg; la óptica es un perfil dentro de ella | Panel de Zernio (login con el correo administrativo del dominio XYborg) | `XYBORG-INTERNO · Zernio · Cuenta de la plataforma de mensajería` | ✅ creada antes del 24/11/2026 |
-| API key de Zernio para Owly | Llamadas de n8n a Zernio (envío y conexión del número) | Se genera en el panel de Zernio; irá en una credencial de n8n | `OPTICA · Zernio · API key de Owly` | ❓ aún no generada |
+| Cuenta de Zernio | Plataforma de la API de WhatsApp de Owly **desde el 26/11/2026** (reemplazó a Dualhook, tarea 67). La cuenta es de XYborg; la óptica es un perfil dentro de ella. *Zero content retention* activado para todo el equipo | Panel de Zernio (login con el correo administrativo del dominio XYborg) | `XYBORG-INTERNO · Zernio · Cuenta de la plataforma de mensajería` | ✅ |
+| API key `owly-n8n-optica` | Envíos de Owly. Restringida al perfil de la óptica y al permiso Messages | Panel de Zernio → credencial de n8n `Zernio API (óptica)` | `OPTICA · Zernio · API key Owly (perfil óptica)` | ✅ en producción |
+| API key `owly-n8n` | Llave amplia (toda la cuenta) de las pruebas en sandbox | Panel de Zernio → credencial de n8n `Zernio API` | `OPTICA · Zernio · API key pruebas (amplia)` | ❓ revocar el 03/12/2026 |
+| Secreto del webhook de Zernio | Firma HMAC (`X-Zernio-Signature`) de los eventos que llegan a `optica-faq-bot-zernio`. El workflow la valida **dentro de Postgres**: el secreto nunca pasa por n8n | Postgres, tabla `xyborg_secretos` (`nombre = 'zernio_webhook'`); el mismo valor en el webhook `owly-produccion` del panel de Zernio | `OPTICA · Zernio · Secreto webhook owly-produccion` | ❓ confirmar entrada en el gestor |
+| Cuenta de Dualhook | Proveedor anterior de la API de WhatsApp | Panel de Dualhook | `OPTICA · Dualhook · Cuenta` | ⛔ desconectada el 26/11/2026. Plan pagado hasta el 06/12: **cancelar el 03/12/2026** si la semana es estable |
 
 ---
 
@@ -98,3 +103,6 @@ El archivo `.env` del stack concentra los secretos del servidor. Nunca va al rep
 - [ ] Revisar si `bot-optica` puede bajar de Admin a Employee
 - [ ] Revisar permisos mínimos del usuario IAM de S3 de imágenes
 - [x] Probar una restauración real desde el backup de S3 (23/11/2026: 10/10 credenciales descifradas)
+- [x] Generar las API keys de Zernio y pasar Owly a Zernio (26/11/2026, tarea 67)
+- [ ] 03/12/2026: revocar `owly-n8n`, cancelar el plan de Dualhook y borrar de n8n las credenciales `Zernio API` y `DualHook Outbound`
+- [ ] Crear en Bitwarden (carpeta `OPTICA`) las entradas de Zernio que falten, con la nota de 3 líneas
